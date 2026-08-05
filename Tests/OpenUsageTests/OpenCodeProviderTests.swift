@@ -101,7 +101,7 @@ final class OpenCodeProviderTests: XCTestCase {
         let snapshot = await provider.refresh()
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertEqual(snapshot.plan, "Go")
-        guard case .progress(_, let used, let limit, _, _, _, _)? = snapshot.line(label: "Session") else {
+        guard case .progress(_, let used, let limit, _, _, _, _, _)? = snapshot.line(label: "Session") else {
             return XCTFail("expected a Session meter")
         }
         XCTAssertEqual(used, 0)

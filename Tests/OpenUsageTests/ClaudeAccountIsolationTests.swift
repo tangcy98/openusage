@@ -292,7 +292,7 @@ final class ClaudeAccountIsolationTests: XCTestCase {
     }
 
     private func sessionUsage(_ snapshot: ProviderSnapshot) -> Double? {
-        guard case .progress(_, let used, _, _, _, _, _) = snapshot.line(label: "Session") else {
+        guard case .progress(_, let used, _, _, _, _, _, _) = snapshot.line(label: "Session") else {
             return nil
         }
         return used

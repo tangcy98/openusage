@@ -113,6 +113,7 @@ For bounded progress resources, `unit` follows the provider's live metric format
 | OpenCode | `session`, `weekly`, `monthly` |
 | OpenRouter | `credits`, `balance`, `keyLimit` |
 | Z.ai | `session`, `weekly`, `webSearches` |
+| LLM Center | `month` (`cny` — the official monthly quota meter) |
 
 Charts, colors, subtitles, formatted badges, layout state, and historical spend periods stay out of this
 contract. Codex's combined Credits UI row becomes two scalar resources: `credits` and `creditValue`.

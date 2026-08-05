@@ -86,7 +86,7 @@ struct WidgetRowView: View {
             // unbounded "No data" row below (and so descriptor template data never leaks here).
             UsageSparkline(data: data)
         } else if data.isBounded {
-            boundedRow
+            boundedRow.hoverPopoverLifecycle(data: data, hover: modelHover)
         } else {
             unboundedRow
         }
@@ -220,9 +220,19 @@ struct WidgetRowView: View {
 
     // The headline value is the row's payload — the number the user opened the popover to read —
     // so it sits at `.primary` (vibrant full-contrast on the popover glass); the surrounding
-    // context (reset countdown, deficit) stays `.secondary`.
+    // context (reset countdown, deficit) stays `.secondary`. On a meter that carries a model
+    // breakdown (a spend-period quota row such as LLM Center's Today / This Month) the headline is
+    // also the breakdown's hover target, exactly like the unbounded rows' value column — same chip,
+    // same dwell, same anchor — so a bar row and a text row reveal their models the same way.
     @ViewBuilder
     private var headlineText: some View {
+        headlineLabel
+            .hoverPopoverTarget(data: data, hover: modelHover, enabled: hasHoverPopover,
+                                highlighted: showValueHighlight)
+    }
+
+    @ViewBuilder
+    private var headlineLabel: some View {
         if data.hasMeterStyleToggle, let onToggleMeterStyle {
             Button(action: onToggleMeterStyle) {
                 Text(data.headline)
@@ -230,7 +240,9 @@ struct WidgetRowView: View {
                     .contentTransition(.numericText())
             }
             .buttonStyle(.plain)
-            .hoverTooltip(data.meterStyleTooltip)
+            // The breakdown popover replaces the Used/Left tooltip on rows that have one: a text
+            // bubble and a popover fighting over the same hover reads as two competing surfaces.
+            .hoverTooltip(hasHoverPopover ? nil : data.meterStyleTooltip)
         } else {
             Text(data.headline)
                 .foregroundStyle(.primary)
@@ -260,17 +272,7 @@ struct WidgetRowView: View {
     /// Unbounded: no bar. Label on the left, with a single right-aligned descriptive line ("1,503 left")
     /// and an optional secondary line ("on-device estimate") beneath it.
     private var unboundedRow: some View {
-        unboundedRowContent
-            .onChange(of: data.modelBreakdown) { _, _ in modelHover.dismiss() }
-            // A refresh can replace the reset credits (count and expiries) while the popover is open;
-            // drop it so it never lingers over a stale timeline — except while the claim flow has the
-            // popover pinned: the claim's own forced refresh is what changes the credits, and dismissing
-            // on it would close the popover before the claim's result banner ever renders. The pinned
-            // popover re-renders from the new data instead (the detail view reconciles its own state).
-            .onChange(of: data.expiriesAt) { _, _ in
-                if !modelHover.isPinned { modelHover.dismiss() }
-            }
-            .onDisappear { modelHover.dismiss() }
+        unboundedRowContent.hoverPopoverLifecycle(data: data, hover: modelHover)
     }
 
     /// The value column reveals the model breakdown on hover, so it lights up under the pointer the way
@@ -326,64 +328,8 @@ struct WidgetRowView: View {
                 }
             }
             .multilineTextAlignment(.trailing)
-            // A quaternary chip behind the value — the app's subtle-fill token, in the shared 6pt
-            // continuous corner — signals the value is interactive before the breakdown even opens.
-            // Negative-inset so it hugs the figure without changing the row's height (the text-row
-            // rhythm that clusters Today / Yesterday / Last 30 Days must not shift), and a quick
-            // opacity fade in/out matches macOS hover states.
-            .background {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(.quaternary)
-                    .padding(.horizontal, -7)
-                    .padding(.vertical, -4)
-                    .opacity(showValueHighlight ? 1 : 0)
-            }
-            .animation(.easeOut(duration: 0.12), value: showValueHighlight)
-            // Both the hover trigger and the popover anchor live on the value column, not the whole
-            // row: hovering the label (or empty gap) shouldn't reveal the breakdown — only the figure
-            // it explains should — and the arrow then centers on that figure, matching the trend
-            // popover's anchoring off the sparkline strip.
-            .contentShape(Rectangle())
-            .onContinuousHover { phase in
-                guard hasHoverPopover else {
-                    modelHover.dismiss()
-                    return
-                }
-                if case .active = phase {
-                    modelHover.inlineHover(true)
-                } else {
-                    modelHover.inlineHover(false)
-                }
-            }
-            .popover(
-                isPresented: Binding(
-                    get: { hasHoverPopover && modelHover.isPresented },
-                    // A click-outside dismiss removes the detail view without an `.ended` hover event,
-                    // so a plain assignment would strand `overDetail == true` and block future hides.
-                    set: { if !$0 { modelHover.dismiss() } }
-                ),
-                arrowEdge: .top
-            ) {
-                if let breakdown = data.modelBreakdown {
-                    ModelUsageDetail(title: data.title, breakdown: breakdown) { inside in
-                        modelHover.detailHover(inside)
-                    }
-                } else if data.showsResetExpiries {
-                    RateLimitResetsDetail(
-                        count: data.resetCreditCount, expiries: data.expiriesAt,
-                        onHoverChange: { inside in modelHover.detailHover(inside) },
-                        onPinChange: { pinned in modelHover.setPinned(pinned) },
-                        // Rows with reset expiries are Codex-only today, so the Codex claim service is
-                        // the right backing; absent from the environment (previews, share renders) the
-                        // timeline is read-only.
-                        claim: codexResetClaim.map { service in
-                            { expiry, redeemRequestID in
-                                await service.claim(creditExpiringAt: expiry, redeemRequestID: redeemRequestID)
-                            }
-                        }
-                    )
-                }
-            }
+            .hoverPopoverTarget(data: data, hover: modelHover, enabled: hasHoverPopover,
+                                highlighted: showValueHighlight, claim: codexResetClaim)
         }
     }
 

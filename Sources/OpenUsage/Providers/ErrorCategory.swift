@@ -172,6 +172,26 @@ extension CopilotUsageError: CategorizedError {
     }
 }
 
+extension LLMCenterAuthError: CategorizedError {
+    var errorCategory: ErrorCategory {
+        switch self {
+        case .notLoggedIn: .notLoggedIn
+        case .credentialsUnreadable: .credentialAccess
+        }
+    }
+}
+
+extension LLMCenterUsageError: CategorizedError {
+    var errorCategory: ErrorCategory {
+        switch self {
+        case .connectionFailed: .network
+        case .invalidResponse: .decoding
+        case .invalidToken: .authExpired
+        case .requestFailed(let status): ErrorCategory.http(status)
+        }
+    }
+}
+
 extension OpenCodeUsageError: CategorizedError {
     var errorCategory: ErrorCategory {
         switch self {

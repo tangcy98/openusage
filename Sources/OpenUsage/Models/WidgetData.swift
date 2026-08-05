@@ -23,6 +23,9 @@ struct WidgetData: Hashable {
     var countSuffix: String?   // e.g. "credits", "requests"
     var valuePrefix: String?   // e.g. "~" for forecasts
     var displayMode: WidgetDisplayMode = .used
+    /// Global menu-bar value style, stamped by `WidgetDataStore` (like `displayMode`). Decides whether
+    /// this tile's *menu-bar* reading is its amount or its share of the limit; dashboard rows ignore it.
+    var menuBarValueStyle: MenuBarValueStyle = .amount
     /// Global relative/absolute reset display, stamped by `WidgetDataStore` (like `displayMode`).
     var resetDisplayMode: ResetDisplayMode = .relative
     /// Global "always show pacing" opt-in, stamped by `WidgetDataStore` (like `displayMode`). When on,
@@ -206,6 +209,7 @@ struct WidgetData: Hashable {
         case .percent: return value.rounded()
         case .count: return (value * 10).rounded() / 10
         case .dollars: return (value * 100).rounded() / 100
+        case .yuan: return (value * 100).rounded() / 100
         }
     }
 
@@ -228,16 +232,28 @@ struct WidgetData: Hashable {
     /// mode through `displayedValue`. Unbounded rows show their selected value compacted through the same
     /// formatter the popover uses. A status badge with no number (e.g. Grok "Disabled") shows its text
     /// rather than a misleading "0".
+    ///
+    /// With the Percent menu-bar style, a bounded metric of any unit collapses to its share of the limit
+    /// instead — the same number the percent branch already produces, so all four unit/style combinations
+    /// share one clamp and one rounding rule. Unbounded rows have no limit to take a share of, so they
+    /// ignore the style and keep their amount.
+    ///
+    /// With the Amount style, a bounded *money* metric reads as a fraction of its cap ("¥150 / ¥1K") rather
+    /// than a bare figure: a currency amount alone says nothing about how much room is left, and the
+    /// strip has no subtitle to carry the cap. The slash is spaced — two currency symbols jammed against
+    /// one divider ("¥150/¥1K") read as a single token at the strip's size. Bounded counts keep the bare
+    /// figure — their unit word ("credits") already lives in the strip's label.
     var menuBarValue: String {
         guard hasData else { return valueText }
         if let limit, limit > 0 {
-            if kind == .percent {
-                // Percent is the only bounded unit that should collapse to a tray percentage. Clamp both
-                // ends so a provider sample can never print "-5%" or "105%" beside the icon.
+            if kind == .percent || menuBarValueStyle == .percent {
+                // Clamp both ends so a provider sample can never print "-5%" or "105%" beside the icon.
                 let percent = min(100, max(0, Int((displayedValue / limit * 100).rounded())))
                 return "\(percent)%"
             }
-            return MetricFormatter.number(displayedValue, kind: kind, style: .tray)
+            let value = MetricFormatter.number(displayedValue, kind: kind, style: .tray)
+            guard kind == .dollars || kind == .yuan else { return value }
+            return "\(value) / \(MetricFormatter.number(limit, kind: kind, style: .tray))"
         }
         if let first = selectedValues.first {
             if let traySuffix, first.kind == .count {
@@ -283,6 +299,11 @@ struct WidgetData: Hashable {
             guard let limit else { return nil }
             let digits = limit.rounded() == limit ? 0 : 2
             let amount = Formatters.currency(limit, fractionDigits: digits)
+            return "\(amount) \(limitNoun ?? "limit")"
+        case .yuan:
+            guard let limit else { return nil }
+            let digits = limit.rounded() == limit ? 0 : 2
+            let amount = Formatters.currency(limit, fractionDigits: digits, symbol: "¥")
             return "\(amount) \(limitNoun ?? "limit")"
         case .count:
             // The unit (e.g. "credits") shows whether the count is bounded or a plain balance.

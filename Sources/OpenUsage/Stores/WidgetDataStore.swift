@@ -40,6 +40,7 @@ final class WidgetDataStore {
     /// name resolver, injected by `AppContainer` so notification titles carry renames. `nil`
     /// (tests, the one-shot CLI) falls back to the baked derived name.
     private let resolveDisplayName: (@MainActor (String) -> String?)?
+    @ObservationIgnored private let exchangeRates: ExchangeRateStore
     /// Where a fired milestone is delivered: `(idPrefix, title, subtitle, body) -> Bool`. The Bool is
     /// whether it was actually delivered (authorized + scheduled); on false the caller leaves the
     /// milestone un-marked so it retries next pass. Injected so tests can record posts without a live
@@ -47,6 +48,7 @@ final class WidgetDataStore {
     private let postNotification: @MainActor (String, String, String, String) async -> Bool
 
     private static let meterStyleKey = "meterStyle"
+    private static let menuBarValueStyleKey = "menuBarValueStyle"
     private static let resetDisplayModeKey = "resetDisplayMode"
     private static let alwaysShowPacingKey = "alwaysShowPacing"
     /// How long a provider that just failed is skipped before the loop will probe it again. A failed
@@ -96,10 +98,22 @@ final class WidgetDataStore {
     /// synthesized snapshots carry the usual Today/Yesterday/Last 30 Days lines), never as cards.
     private(set) var remoteOnlySpend: [(provider: Provider, snapshot: ProviderSnapshot)] = []
 
+    /// Dollars per yuan, refreshed alongside each provider pass so the Total Spend ring can fold the
+    /// CNY-billed providers into its dollar total. Observable so the ring re-renders when a fresh rate
+    /// lands; seeded with the fallback so the very first render already converts.
+    private(set) var usdPerCNY: Double = ExchangeRateStore.fallbackUSDPerCNY
+
     /// Global meter style: whether every bounded tile (and the menu-bar value) renders as "used" or
     /// "left/remaining". Persisted so the choice survives relaunch; defaults to `.remaining`.
     var meterStyle: WidgetDisplayMode {
         didSet { defaults.set(meterStyle.rawValue, forKey: Self.meterStyleKey) }
+    }
+
+    /// Global menu-bar value style: whether a bounded metric's strip value reads as its amount ("¥150")
+    /// or its share of the limit ("2%"). Persisted; defaults to `.amount` — the strip's long-standing
+    /// behavior, so an existing install sees no change. Dashboard rows are unaffected.
+    var menuBarValueStyle: MenuBarValueStyle {
+        didSet { defaults.set(menuBarValueStyle.rawValue, forKey: Self.menuBarValueStyleKey) }
     }
 
     /// Global reset-countdown format: relative ("Resets in 4d 17h") or absolute ("Resets tomorrow at
@@ -128,7 +142,8 @@ final class WidgetDataStore {
         notificationSettings: (@MainActor () -> NotificationSettingsStore)? = nil,
         postNotification: (@MainActor (String, String, String, String) async -> Bool)? = nil,
         providerIdentityKeys: [String: String] = [:],
-        resolveDisplayName: (@MainActor (String) -> String?)? = nil
+        resolveDisplayName: (@MainActor (String) -> String?)? = nil,
+        exchangeRates: ExchangeRateStore = .shared
     ) {
         precondition(slowProviderRefreshThreshold >= 0)
         self.registry = registry
@@ -147,7 +162,9 @@ final class WidgetDataStore {
             }
         self.providerIdentityKeys = providerIdentityKeys
         self.resolveDisplayName = resolveDisplayName
+        self.exchangeRates = exchangeRates
         self.meterStyle = defaults.enumValue(forKey: Self.meterStyleKey, default: .remaining)
+        self.menuBarValueStyle = defaults.enumValue(forKey: Self.menuBarValueStyleKey, default: .amount)
         self.resetDisplayMode = defaults.enumValue(forKey: Self.resetDisplayModeKey, default: .relative)
         self.alwaysShowPacing = defaults.bool(forKey: Self.alwaysShowPacingKey)
         // Stale-while-revalidate: load whatever was cached (expired included) so the menu bar and
@@ -203,6 +220,9 @@ final class WidgetDataStore {
         let cached = outcomes.count { $0 == .cacheHit }
         let backedOff = outcomes.count { $0 == .backedOff }
         if refreshed > 0 { onLocalHistoryChanged?() }
+        // The rate store serves its cached value immediately and refetches at most daily, so reading it
+        // once per pass costs nothing and keeps the ring's CNY conversion current.
+        usdPerCNY = await exchangeRates.usdPerCNY()
         AppLog.info(.refresh, "batch end (\(durationMs)ms, \(refreshed) ok / \(failed) failed / \(cached) cached / \(backedOff) backed off)")
     }
 
@@ -553,6 +573,7 @@ final class WidgetDataStore {
         // so stamping the mode once makes them follow the global setting. Inert for unbounded rows
         // (limit == nil), whose displayed value ignores displayMode.
         result.displayMode = meterStyle
+        result.menuBarValueStyle = menuBarValueStyle
         result.resetDisplayMode = resetDisplayMode
         result.alwaysShowPacing = alwaysShowPacing
         return result
@@ -589,7 +610,7 @@ final class WidgetDataStore {
 
     private func resolve(_ line: MetricLine, descriptor: WidgetDescriptor) -> WidgetData? {
         switch line {
-        case .progress(_, let used, let limit, let format, let resetsAt, let periodDurationMs, _):
+        case .progress(_, let used, let limit, let format, let resetsAt, let periodDurationMs, _, let modelBreakdown):
             // A percent meter is a bounded 0...100 domain; sanitize an out-of-range sample (a provider
             // reporting a negative or >100 utilization) here, at the single construction choke point
             // every provider funnels through, so no surface — headline, flip tooltip, menu bar — can
@@ -614,6 +635,10 @@ final class WidgetDataStore {
             // Descriptor opt-in (session-window meters read "Not started" when unused); the fresh
             // `.progress` result doesn't start from the sample, so carry the flag explicitly.
             result.isSessionWindow = descriptor.sample.isSessionWindow
+            // A bounded meter can carry the same per-model hover breakdown a spend row does (e.g. a
+            // monthly quota meter). `isUsagePeriod` gates the popover, so carry it from the descriptor.
+            result.isUsagePeriod = descriptor.sample.isUsagePeriod
+            result.modelBreakdown = modelBreakdown
             return result
         case .text:
             // Text lines carry provider notices for the local API; no dashboard descriptor consumes

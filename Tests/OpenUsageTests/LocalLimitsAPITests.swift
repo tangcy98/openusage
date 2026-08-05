@@ -218,6 +218,9 @@ final class LocalLimitsAPITests: XCTestCase {
             "copilot": ["premiumCredits", "extraUsage", "orgCredits", "orgSpend", "chat", "completions"],
             "devin": ["daily", "weekly", "extraUsageBalance"],
             "grok": ["weekly"],
+            // LLM Center exports only its official monthly quota meter; the Today/Yesterday spend rows
+            // are `.values` rows the limits envelope never carries.
+            "llmcenter": ["month"],
             "opencode": ["session", "weekly", "monthly"],
             "openrouter": ["credits", "balance", "keyLimit"],
             "zai": ["session", "weekly", "webSearches"]

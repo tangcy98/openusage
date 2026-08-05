@@ -14,14 +14,15 @@ enum ProviderCatalog {
         claudeCards: [ClaudeAccountCard] = [],
         defaultClaudeExtraLogRoots: [URL] = []
     ) -> [ProviderRuntime] {
-        // Default provider order (see AGENTS.md "## Providers"): the three established providers first,
-        // then every other provider alphabetically by display name. Account cards slot in right after
-        // their family's default card.
+        // Default provider order (see AGENTS.md "## Providers"): LLM Center first — this build's
+        // primary relay, whose CNY quota is the number its users open the app for — then the three
+        // established providers, then every other provider alphabetically by display name. Account
+        // cards slot in right after their family's default card.
         //
         // Every baked `Provider.displayName` here is the DERIVED default — renames live only in the
         // account registry and are resolved at render time (`ProviderAccountRecord.resolvedDisplayName`),
         // so a baked name can never be a stale copy of one.
-        var runtimes: [ProviderRuntime] = []
+        var runtimes: [ProviderRuntime] = [LLMCenterProvider()]
         runtimes.append(ClaudeProvider(
             // Once extra Claude cards exist, an unpinned Desktop fallback could borrow a login that
             // belongs to one of them — fetching that account's usage onto the default card. Desktop

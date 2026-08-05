@@ -6,6 +6,7 @@ import Foundation
 enum ProgressFormat: Hashable, Sendable, Codable {
     case percent
     case dollars
+    case yuan
     case count(suffix: String)
 
     var metricKind: MetricKind {
@@ -14,6 +15,8 @@ enum ProgressFormat: Hashable, Sendable, Codable {
             return .percent
         case .dollars:
             return .dollars
+        case .yuan:
+            return .yuan
         case .count:
             return .count
         }
@@ -32,6 +35,7 @@ enum ProgressFormat: Hashable, Sendable, Codable {
     private enum Kind: String, Codable {
         case percent
         case dollars
+        case yuan
         case count
     }
 
@@ -42,6 +46,8 @@ enum ProgressFormat: Hashable, Sendable, Codable {
             self = .percent
         case .dollars:
             self = .dollars
+        case .yuan:
+            self = .yuan
         case .count:
             self = .count(suffix: try container.decode(String.self, forKey: .suffix))
         }
@@ -54,6 +60,8 @@ enum ProgressFormat: Hashable, Sendable, Codable {
             try container.encode(Kind.percent, forKey: .kind)
         case .dollars:
             try container.encode(Kind.dollars, forKey: .kind)
+        case .yuan:
+            try container.encode(Kind.yuan, forKey: .kind)
         case .count(let suffix):
             try container.encode(Kind.count, forKey: .kind)
             try container.encode(suffix, forKey: .suffix)
@@ -110,14 +118,15 @@ enum MetricLine: Hashable, Sendable, Codable {
         format: ProgressFormat,
         resetsAt: Date? = nil,
         periodDurationMs: Int? = nil,
-        colorHex: String? = nil
+        colorHex: String? = nil,
+        modelBreakdown: ModelUsageBreakdown? = nil
     )
     case badge(label: String, text: String, colorHex: String? = nil, subtitle: String? = nil)
 
     var label: String {
         switch self {
         case .text(let label, _, _, _),
-             .progress(let label, _, _, _, _, _, _),
+             .progress(let label, _, _, _, _, _, _, _),
              .values(let label, _, _, _, _, _),
              .badge(let label, _, _, _),
              .chart(let label, _, _):
@@ -204,7 +213,8 @@ enum MetricLine: Hashable, Sendable, Codable {
                 format: try container.decode(ProgressFormat.self, forKey: .format),
                 resetsAt: try container.decodeIfPresent(Date.self, forKey: .resetsAt),
                 periodDurationMs: try container.decodeIfPresent(Int.self, forKey: .periodDurationMs),
-                colorHex: try container.decodeIfPresent(String.self, forKey: .colorHex)
+                colorHex: try container.decodeIfPresent(String.self, forKey: .colorHex),
+                modelBreakdown: try container.decodeIfPresent(ModelUsageBreakdown.self, forKey: .modelBreakdown)
             )
         case .badge:
             self = .badge(
@@ -239,7 +249,7 @@ enum MetricLine: Hashable, Sendable, Codable {
             if !expiriesAt.isEmpty { try container.encode(expiriesAt, forKey: .expiriesAt) }
             if !unknownModels.isEmpty { try container.encode(unknownModels, forKey: .unknownModels) }
             try container.encodeIfPresent(modelBreakdown, forKey: .modelBreakdown)
-        case .progress(let label, let used, let limit, let format, let resetsAt, let periodDurationMs, let colorHex):
+        case .progress(let label, let used, let limit, let format, let resetsAt, let periodDurationMs, let colorHex, let modelBreakdown):
             try container.encode(LineType.progress, forKey: .type)
             try container.encode(label, forKey: .label)
             try container.encode(used, forKey: .used)
@@ -248,6 +258,7 @@ enum MetricLine: Hashable, Sendable, Codable {
             try container.encodeIfPresent(resetsAt, forKey: .resetsAt)
             try container.encodeIfPresent(periodDurationMs, forKey: .periodDurationMs)
             try container.encodeIfPresent(colorHex, forKey: .colorHex)
+            try container.encodeIfPresent(modelBreakdown, forKey: .modelBreakdown)
         case .badge(let label, let text, let colorHex, let subtitle):
             try container.encode(LineType.badge, forKey: .type)
             try container.encode(label, forKey: .label)

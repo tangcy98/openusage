@@ -56,7 +56,7 @@ struct ModelUsageDetail: View {
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 if let cost = model.costUSD {
-                    Text(MetricFormatter.number(cost, kind: .dollars, style: .row))
+                    Text(MetricFormatter.number(cost, kind: breakdown.costKind, style: .row))
                         .foregroundStyle(.primary)
                         .monospacedDigit()
                 } else {

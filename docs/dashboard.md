@@ -16,11 +16,13 @@ A provider card can also show **quick-link buttons** pinned at the bottom of its
 
 ## Total Spend
 
-When any enabled provider tracks daily spend (Claude, Codex, Cursor, Grok, or OpenCode), a card sits above the provider sections. The title is a pull-down menu for **Cost**, **Cost/MTok**, or **Tokens** (Cost is the default; the choice sticks across restarts). A capsule switcher flips the period between **Today**, **Yesterday**, and **30 Days**. The ring, center total, and ranked legend follow the selected metric:
+When any enabled provider tracks daily spend (Claude, Codex, Cursor, Grok, OpenCode, or LLM Center), a card sits above the provider sections. The title is a pull-down menu for **Cost**, **Cost/MTok**, or **Tokens** (Cost is the default; the choice sticks across restarts). A capsule switcher flips the period between **Today**, **Yesterday**, and **30 Days**. The ring, center total, and ranked legend follow the selected metric:
 
 - **Cost** — each segment is that provider's share of combined dollars (biggest spender first).
 - **Cost/MTok** — each segment is sized by that provider's dollars-per-million-tokens rate; the center is the blended rate across providers that have both spend and tokens; the legend lists each provider's own rate.
 - **Tokens** — each segment is that provider's share of combined tokens.
+
+The ring always counts in dollars. A provider billed in another currency — LLM Center's yuan — is converted at the current exchange rate before it joins the total, which is why its slice is marked as an estimate. The rate comes from a public feed, is refreshed at most once a day, and falls back to a bundled rate when the feed can't be reached.
 
 The ring center is always two short lines — a compact number on top and a quiet unit underneath (`$533` / `dollars`, `12.4` / `million`, or `$1.37` / `MTok`) — so Cost/MTok and big totals stay readable in the hole. Cost modes keep the `$` on the number. Hover the center for the exact one-line figure (and a note when any contributor's dollars are a local estimate — Cost and Cost/MTok only). Each provider keeps a fixed color drawn from its brand (Claude's terracotta, OpenAI's green, and so on), and even a tiny share keeps a visible sliver of the ring. Providers with nothing for the selected metric simply don't appear — they're never counted as zero. (An enabled provider counts even if you've hidden its own spend rows in Customize; other dollar rows, like OpenRouter's API spend, never mix in.) The header's share icon (or right-clicking the card) copies a branded PNG of the ring to your clipboard, just like sharing a provider card. The header also carries a small ⓘ naming the providers that feed the total. A period with nothing to show for the active metric shows a quiet empty state instead of hiding the card. Don't want the card at all? Turn it off with **Show Total Spend** at the top of [Settings](settings.md).
 

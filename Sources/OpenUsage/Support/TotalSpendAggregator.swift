@@ -169,40 +169,70 @@ struct TotalSpend: Equatable {
 
 /// Sums per-provider daily spend into one cross-provider total — the data source for the dashboard's
 /// Total Spend ring card. Pure and synchronous: it reads already-refreshed `ProviderSnapshot`s and
-/// never fetches. A provider contributes when its snapshot carries a `.values` line with the period's
-/// label *and* that line has dollars and/or tokens — idle periods (no line) are excluded, never zero.
+/// never fetches. A provider contributes when its snapshot carries a line with the period's label
+/// *and* that line has money and/or tokens — idle periods (no line) are excluded, never zero.
+///
+/// Both line shapes count: the usual `.values` spend row, and a `.progress` quota meter carrying the
+/// period's spend (LLM Center's Today / This Month meters). A meter's "used" side is the same spend
+/// figure a values row reports, so excluding it would drop a real contributor from the ring.
 enum TotalSpendAggregator {
     /// The total for one period across `providers` (pass them in display order; ties keep it).
     /// Slices keep provider display order input only as a stable traversal; metric projection re-ranks.
     /// `title` resolves each provider's card title — the live card passes the account-registry
     /// resolver so slices carry renames; the default is the baked derived name for callers without
     /// registry access (tests).
+    ///
+    /// `usdPerCNY` converts the yuan-billed providers into the ring's dollar domain. A converted
+    /// contribution is always marked `estimated`: the rate is a daily snapshot of a moving market, so
+    /// the total it feeds is an approximation no matter how the provider itself measured the spend.
     static func total(
         for period: TotalSpendPeriod,
         providers: [Provider],
         snapshots: [String: ProviderSnapshot],
+        usdPerCNY: Double = ExchangeRateStore.fallbackUSDPerCNY,
         title: (Provider) -> String = { $0.displayName }
     ) -> TotalSpend {
         let slices = providers.compactMap { provider -> TotalSpendSlice? in
             guard let snapshot = snapshots[provider.id],
                   let line = snapshot.line(label: period.lineLabel),
-                  case .values(_, let values, _, _, _, _) = line else { return nil }
-
-            let dollars = values.filter { $0.kind == .dollars }
-            let amount = dollars.reduce(0) { $0 + $1.number }
-            let tokens = values
-                .filter { $0.kind == .count && $0.label == "tokens" }
-                .reduce(0) { $0 + $1.number }
-            guard amount > 0 || tokens > 0 else { return nil }
+                  let spend = money(in: line, usdPerCNY: usdPerCNY) else { return nil }
+            guard spend.amountUSD > 0 || spend.tokens > 0 else { return nil }
 
             return TotalSpendSlice(
                 provider: provider,
                 title: title(provider),
-                amountUSD: max(amount, 0),
-                tokenCount: max(tokens, 0),
-                estimated: dollars.contains(where: \.estimated)
+                amountUSD: max(spend.amountUSD, 0),
+                tokenCount: max(spend.tokens, 0),
+                estimated: spend.estimated
             )
         }
         return TotalSpend(period: period, slices: slices)
+    }
+
+    /// This period's dollars and tokens from one metric line, or `nil` when the line carries neither.
+    private static func money(
+        in line: MetricLine,
+        usdPerCNY: Double
+    ) -> (amountUSD: Double, tokens: Double, estimated: Bool)? {
+        switch line {
+        case .values(_, let values, _, _, _, _):
+            let dollars = values.filter { $0.kind == .dollars }
+            let yuan = values.filter { $0.kind == .yuan }
+            let amount = dollars.reduce(0) { $0 + $1.number }
+                + yuan.reduce(0) { $0 + $1.number } * usdPerCNY
+            let tokens = values
+                .filter { $0.kind == .count && $0.label == "tokens" }
+                .reduce(0) { $0 + $1.number }
+            return (amount, tokens, dollars.contains(where: \.estimated) || !yuan.isEmpty)
+        case .progress(_, let used, _, let format, _, _, _, _):
+            // A meter has one number and no token count; its "used" side is the period's spend.
+            switch format {
+            case .dollars: return (used, 0, false)
+            case .yuan: return (used * usdPerCNY, 0, true)
+            case .percent, .count: return nil
+            }
+        case .text, .chart, .badge:
+            return nil
+        }
     }
 }

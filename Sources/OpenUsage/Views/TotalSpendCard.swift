@@ -52,6 +52,7 @@ struct TotalSpendCard: View {
             for: period,
             providers: aggregatedProviders,
             snapshots: aggregatedSnapshots,
+            usdPerCNY: dataStore.usdPerCNY,
             title: { container.displayName(for: $0) }
         )
     }

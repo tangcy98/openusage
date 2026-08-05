@@ -35,6 +35,7 @@ time; it also reports unavailable iCloud, loading, write, and malformed-file sta
 | Setting | Options | What it does |
 |---|---|---|
 | Show Usage As | Used / Left | Whether bounded metrics read "48% used" or "52% left" — same toggle as clicking a headline. |
+| Menu Bar Values | Amount / Percent | How bounded metrics read *in the menu bar*. Amount (default) shows the number itself — money carries its cap ("¥150 / ¥1K", "$12 / $20") since an amount alone says nothing about the room left, while counts stay bare ("412"). Percent shows the share of the limit ("15%"). Percent meters read the same either way, and rows without a limit (a balance or a plain spend total) always show their amount. The dashboard is unaffected. |
 | Reset Times | Countdown / Exact time | "Resets in 3h 25m" vs "Resets today at 6:38 PM" — same toggle as clicking a reset label. |
 | Always Show Pacing | Off / On | Off (default) shows pacing only when a metric is close to or over its limit. On surfaces it on every metric with a reset window: on-track rows gain their projection ("~33% left at reset") and an even-pace tick marking where steady use would put you right now. Metrics without a reset window have no pace to show. |
 

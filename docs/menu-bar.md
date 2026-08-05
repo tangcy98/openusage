@@ -10,7 +10,7 @@ Right-click (or control-click) the menu bar icon for a quick menu with **Setting
 
 Star a metric from any row's right-click menu, or from the always-visible star beside a metric in Customize.
 
-- On first launch the app ships with a default set of stars (Antigravity Session/Weekly, Claude Session/Weekly, Codex Session/Weekly, Cursor Auto Usage/API Usage, Copilot Credits, OpenRouter Credits, Z.ai Session/Weekly) so the strip shows numbers right away. Change them anytime; a provider's Reset restores its defaults, and Reset All restores the full set. Only providers that are turned on render in the strip — and a fresh install starts with just the providers detected on your Mac (see [Dashboard § First launch](dashboard.md#first-launch)) — so the default stars don't crowd the menu bar with tools you don't use.
+- On first launch the app ships with a default set of stars (Antigravity Session/Weekly, Claude Session/Weekly, Codex Session/Weekly, Cursor Auto Usage/API Usage, Copilot Credits, LLM Center Today/This Month, OpenRouter Credits, Z.ai Session/Weekly) so the strip shows numbers right away. Change them anytime; a provider's Reset restores its defaults, and Reset All restores the full set. Only providers that are turned on render in the strip — and a fresh install starts with just the providers detected on your Mac (see [Dashboard § First launch](dashboard.md#first-launch)) — so the default stars don't crowd the menu bar with tools you don't use.
 - At most **2 stars per provider**.
 - When a star isn't allowed, the star button stays clickable — clicking it shakes and shows the reason in a temporary pill over the bottom of Customize (for example, "Up to 2 stars per provider").
 
@@ -38,3 +38,10 @@ While the screen is shared or recorded:
 ## What the strip shows
 
 The strip only renders real data. A starred metric with nothing fetched yet is skipped; a provider whose stars all lack data disappears entirely (icon included). When nothing has data, the strip falls back to the app icon. Stars follow your Customize order — Always Visible metrics first, then On Demand ones. A metric can be starred whether it's Always Visible or On Demand.
+
+Two settings shape the numbers themselves:
+
+- **Show Usage As** (Used / Left) picks *which* number a bounded metric shows — what you've used, or what's left.
+- **Menu Bar Values** (Amount / Percent) picks *how* it's written — "¥150 / ¥1K" or "15%". With Amount, a money row carries its cap after a slash so the number has something to be measured against; counts stay bare. Percent meters read the same either way, and rows without a limit always show their amount.
+
+Both live in Settings → Usage Display and apply to every provider.

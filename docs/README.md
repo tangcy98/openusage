@@ -30,6 +30,7 @@ What each provider tracks, where its credentials come from, and what to do when 
 - [Cursor](providers/cursor.md)
 - [Devin](providers/devin.md)
 - [Grok](providers/grok.md)
+- [LLM Center](providers/llmcenter.md)
 - [OpenCode](providers/opencode.md)
 - [OpenRouter](providers/openrouter.md)
 - [Z.ai](providers/zai.md)
@@ -41,4 +42,5 @@ How the app is built and how to extend it.
 - [Architecture](architecture.md) — composition root, stores, the provider pipeline, the AppKit bridge
 - [Adding a provider](adding-a-provider.md) — the metric contract and the register/test/document steps
 - [Debugging & capturing logs](debugging.md) — running a local build and streaming logs
+- [Local distribution](local-distribution.md) — packaging an un-notarized DMG for a team, and what a recipient needs
 - [Logging](logging.md) — the file log, log levels, subsystem tags, and what is never logged

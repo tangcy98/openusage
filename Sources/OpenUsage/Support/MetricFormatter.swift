@@ -31,19 +31,9 @@ enum MetricFormatter {
             // and color (see `WidgetData.meterState`), not by an out-of-range headline number.
             return "\(Int(ProviderParse.clampPercent(value).rounded()))%"
         case .dollars:
-            // Tray and row abbreviate four figures and up ("$1.2M", "$2.1K") so neither carries
-            // "$2,059.07"; the full form (tooltips/headlines) always keeps grouped cents.
-            if abs(value) >= 1000, style != .full {
-                return "$" + value.formatted(.number.notation(.compactName).precision(.fractionLength(0...1)).locale(locale))
-            }
-            switch style {
-            case .tray:
-                // Shortest below $1k: whole dollars ("$130").
-                return "$" + value.formatted(.number.precision(.fractionLength(0)).locale(locale))
-            case .row, .full:
-                // Full cents below $1k; the row's token-count neighbor stays readable.
-                return Formatters.currency(value, fractionDigits: 2)
-            }
+            return currencyNumber(value, style: style, symbol: "$")
+        case .yuan:
+            return currencyNumber(value, style: style, symbol: "¥")
         case .count:
             // Tray and row abbreviate at the thousands (token counts run into the billions); the full
             // form keeps every digit for the tooltip. Below 1,000 keeps up to one decimal either way, so
@@ -55,8 +45,24 @@ enum MetricFormatter {
         }
     }
 
-    /// A value with its unit label appended, e.g. "772 credits". Token, dollar, and percent values
-    /// carry no label and render bare ("56.9M", "$4.08", "95%") — those rows show no unit, by design.
+    /// Shared currency rendering for `.dollars` and `.yuan`: tray and row abbreviate four figures and
+    /// up ("$1.2M", "¥2.1K") so neither carries "$2,059.07"; the full form (tooltips/headlines) always
+    /// keeps grouped cents.
+    private static func currencyNumber(_ value: Double, style: Style, symbol: String) -> String {
+        if abs(value) >= 1000, style != .full {
+            return symbol + value.formatted(.number.notation(.compactName).precision(.fractionLength(0...1)).locale(locale))
+        }
+        switch style {
+        case .tray:
+            return symbol + value.formatted(.number.precision(.fractionLength(0)).locale(locale))
+        case .row, .full:
+            return Formatters.currency(value, fractionDigits: 2, symbol: symbol)
+        }
+    }
+
+    /// A value with its unit label appended, e.g. "772 credits". Token, dollar, yuan, and percent
+    /// values carry no label and render bare ("56.9M", "$4.08", "¥56.40", "95%") — those rows show
+    /// no unit, by design.
     static func string(for value: MetricValue, style: Style) -> String {
         let text = number(value.number, kind: value.kind, style: style)
         guard let label = value.label, !label.isEmpty else { return text }

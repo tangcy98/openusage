@@ -39,6 +39,24 @@ extension WidgetDescriptor {
                                 unboundedValueWord: valueWord))
     }
 
+    /// Bounded yuan meter, the CNY counterpart to `boundedDollars` — same semantics, `¥` instead of
+    /// `$`. No `valueWord`: unlike Extra Usage, every yuan tile reports a real cap, so there is no
+    /// uncapped fallback rendering to name.
+    static func boundedYuan(
+        id: String,
+        provider: Provider,
+        title: String,
+        metricLabel: String? = nil,
+        limit: Double,
+        limitNoun: String? = nil,
+        isUsagePeriod: Bool = false
+    ) -> WidgetDescriptor {
+        var sample = WidgetData(title: title, icon: provider.icon,
+                                kind: .yuan, used: 0, limit: limit, limitNoun: limitNoun)
+        sample.isUsagePeriod = isUsagePeriod
+        return make(id: id, provider: provider, metricLabel: metricLabel ?? title, sample: sample)
+    }
+
     /// Bounded count meter (e.g. requests per billing cycle). `periodDurationMs` lets the subtitle
     /// show the cycle's reset cadence instead of the bare suffix.
     static func boundedCount(
@@ -157,6 +175,16 @@ extension WidgetDescriptor {
         sample.isChart = true
         return make(id: "\(provider.id).trend", provider: provider, metricLabel: "Usage Trend",
                     sample: sample, pinnable: false)
+    }
+
+    /// Marks a tile the provider builds itself as a Total Spend contributor. `spendTiles` sets the flag
+    /// for the shared Today / Yesterday / Last 30 Days set; a provider whose spend rows come from its
+    /// own API rather than `SpendTileMapper` (LLM Center's official CNY rows) opts in through here, so
+    /// the ring's capability gate stays a descriptor flag rather than a title match.
+    func contributingToTotalSpend() -> WidgetDescriptor {
+        var copy = self
+        copy.isSpendTile = true
+        return copy
     }
 
     private static func make(

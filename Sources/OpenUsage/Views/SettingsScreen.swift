@@ -130,6 +130,12 @@ struct SettingsScreen: View {
                 row("Show Usage As") {
                     picker($store.meterStyle, options: WidgetDisplayMode.allCases, label: \.label)
                 }
+                // Menu-bar only: whether a starred meter's strip value reads as its amount ("¥150") or
+                // its share of the limit ("2%"). Dashboard rows always show both, so this is scoped to
+                // the strip, where there's room for exactly one reading.
+                row("Menu Bar Values") {
+                    picker($store.menuBarValueStyle, options: MenuBarValueStyle.allCases, label: \.label)
+                }
                 row("Reset Times") {
                     picker($store.resetDisplayMode, options: ResetDisplayMode.allCases, label: \.label)
                 }

@@ -7,5 +7,6 @@ import Foundation
 enum MetricKind: String, Hashable, Sendable, Codable {
     case percent      // used is 0...100
     case dollars      // used is an amount in USD
+    case yuan         // used is an amount in CNY (人民币)
     case count        // used is an absolute count (with an optional suffix)
 }

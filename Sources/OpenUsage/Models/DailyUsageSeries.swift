@@ -90,11 +90,42 @@ struct ProviderUsageHistory: Hashable, Sendable, Codable {
 
 /// A period-scoped, UI-ready breakdown attached to the same `.values` line as the spend row it explains.
 /// The header total mirrors that row's values; individual model costs are rounded at this display boundary.
+/// `costKind` says how the breakdown's costs are denominated — `.dollars` for the existing USD spend rows,
+/// `.yuan` for CNY-billed providers — so the hover panel renders the same symbol the row shows.
 struct ModelUsageBreakdown: Hashable, Sendable, Codable {
     var totalTokens: Int
     var totalCostUSD: Double?
     var models: [ModelUsageEntry]
     var sourceNote: String
+    var costKind: MetricKind = .dollars
+
+    // Restated because writing any initializer suppresses the synthesized memberwise one, and the
+    // custom `init(from:)` below is required.
+    init(
+        totalTokens: Int,
+        totalCostUSD: Double?,
+        models: [ModelUsageEntry],
+        sourceNote: String,
+        costKind: MetricKind = .dollars
+    ) {
+        self.totalTokens = totalTokens
+        self.totalCostUSD = totalCostUSD
+        self.models = models
+        self.sourceNote = sourceNote
+        self.costKind = costKind
+    }
+
+    /// Hand-written only to tolerate a missing `costKind`: the synthesized decode throws on an absent
+    /// key, which would drop every snapshot cached before this field existed. `CodingKeys` and
+    /// `encode(to:)` stay synthesized.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        totalTokens = try container.decode(Int.self, forKey: .totalTokens)
+        totalCostUSD = try container.decodeIfPresent(Double.self, forKey: .totalCostUSD)
+        models = try container.decode([ModelUsageEntry].self, forKey: .models)
+        sourceNote = try container.decode(String.self, forKey: .sourceNote)
+        costKind = try container.decodeIfPresent(MetricKind.self, forKey: .costKind) ?? .dollars
+    }
 }
 
 /// Daily token/cost series plus the per-day models the pricing sources couldn't price — the inputs

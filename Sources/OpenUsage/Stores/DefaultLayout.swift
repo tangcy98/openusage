@@ -26,6 +26,8 @@ enum DefaultLayout {
         "grok.weekly", "grok.trend",
         "grok.payAsYouGo", "grok.today", "grok.yesterday", "grok.last30",
 
+        "llmcenter.today", "llmcenter.month", "llmcenter.yesterday", "llmcenter.trend",
+
         "opencode.session", "opencode.weekly", "opencode.monthly", "opencode.trend",
         "opencode.today", "opencode.yesterday", "opencode.last30",
 
@@ -65,7 +67,10 @@ enum DefaultLayout {
         "cursor.auto", "cursor.api",
         "copilot.premium",
         "openrouter.credits",
-        "zai.session", "zai.weekly"
+        "zai.session", "zai.weekly",
+        // Both LLM Center spend rows: the strip stacks a provider's two stars, so Today sits above This
+        // Month — the pair the user watches together.
+        "llmcenter.today", "llmcenter.month"
     ]
 
     /// Account-card-aware default list: for every extra account card in the registry
@@ -119,6 +124,9 @@ enum DefaultLayout {
         // sit below the caret.
         "openrouter.today", "openrouter.week", "openrouter.month", "openrouter.keyLimit",
         // Z.ai: Session meter stays above the fold; Web Searches (monthly count) sits below the caret.
-        "zai.webSearches"
+        "zai.webSearches",
+        // LLM Center: Today and This Month stay above the fold (the spend rows the user asked to show);
+        // Yesterday and the Usage Trend chart sit below the caret.
+        "llmcenter.yesterday", "llmcenter.trend"
     ]
 }

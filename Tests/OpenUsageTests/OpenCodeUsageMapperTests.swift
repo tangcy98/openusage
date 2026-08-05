@@ -13,7 +13,7 @@ final class OpenCodeUsageMapperTests: XCTestCase {
         let lines = OpenCodeUsageMapper.meterLines(windows)
         XCTAssertEqual(lines.map(\.label), ["Session", "Weekly", "Monthly"])
 
-        guard case let .progress(_, sessionUsed, sessionLimit, sessionFormat, sessionReset, sessionPeriod, _) = lines[0] else {
+        guard case let .progress(_, sessionUsed, sessionLimit, sessionFormat, sessionReset, sessionPeriod, _, _) = lines[0] else {
             return XCTFail("session is not a progress line")
         }
         XCTAssertEqual(sessionUsed, 6.0)
@@ -22,14 +22,14 @@ final class OpenCodeUsageMapperTests: XCTestCase {
         XCTAssertEqual(sessionReset, reset)
         XCTAssertEqual(sessionPeriod, 5 * 60 * 60 * 1000)
 
-        guard case let .progress(_, _, weeklyLimit, weeklyFormat, _, weeklyPeriod, _) = lines[1] else {
+        guard case let .progress(_, _, weeklyLimit, weeklyFormat, _, weeklyPeriod, _, _) = lines[1] else {
             return XCTFail("weekly is not a progress line")
         }
         XCTAssertEqual(weeklyLimit, 30)
         XCTAssertEqual(weeklyFormat, .dollars)
         XCTAssertEqual(weeklyPeriod, 7 * 24 * 60 * 60 * 1000)
 
-        guard case let .progress(_, monthlyUsed, monthlyLimit, monthlyFormat, _, monthlyPeriod, _) = lines[2] else {
+        guard case let .progress(_, monthlyUsed, monthlyLimit, monthlyFormat, _, monthlyPeriod, _, _) = lines[2] else {
             return XCTFail("monthly is not a progress line")
         }
         XCTAssertEqual(monthlyUsed, 40.0)

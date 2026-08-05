@@ -107,15 +107,17 @@ final class MenuBarContentTests: XCTestCase {
     }
 
     func testBoundedTrayValuesStayUnitAware() {
-        // Percent meters still read as percentages, while bounded dollars/counts keep their natural
-        // unit in the strip instead of collapsing to "used / limit" percentages.
+        // Percent meters still read as percentages rather than raw fractions. Bounded money carries
+        // its cap ("$12K / $18K") — a currency amount alone says nothing about the room left, and the
+        // strip has no subtitle to put the cap in. Bounded counts stay bare: their unit word lives
+        // in the strip's label already. Unbounded values have no cap to show.
         let usage = percent("a.usage", "Usage", 67)
         let credits = boundedDollars("a.credits", "Credits", used: 12000, limit: 18000)
         let requests = boundedCount("a.requests", "Requests", used: 412, limit: 500)
         let spend = unbounded("a.spend", "Spend")   // unbounded $42
         let content = MenuBarContentBuilder.build(groups: [group("a", usage, credits, requests, spend)], data: { $0.sample })
 
-        XCTAssertEqual(content.groups[0].metrics.map(\.value), ["67%", "$12K", "412", "$42"])
+        XCTAssertEqual(content.groups[0].metrics.map(\.value), ["67%", "$12K / $18K", "412", "$42"])
     }
 
     func testUnboundedNumbersAreCompacted() {

@@ -372,13 +372,57 @@ final class WidgetDataStoreTests: XCTestCase {
         )
         await store.refreshAll()
 
+        // Money carries its cap; counts stay bare. Left-mode flips only the shown side — the cap
+        // after the slash is the same number either way.
         store.meterStyle = .used
-        XCTAssertEqual(store.data(for: budget).menuBarValue, "$12")
+        XCTAssertEqual(store.data(for: budget).menuBarValue, "$12 / $20")
         XCTAssertEqual(store.data(for: requests).menuBarValue, "412")
 
         store.meterStyle = .remaining
-        XCTAssertEqual(store.data(for: budget).menuBarValue, "$8")
+        XCTAssertEqual(store.data(for: budget).menuBarValue, "$8 / $20")
         XCTAssertEqual(store.data(for: requests).menuBarValue, "88")
+    }
+
+    func testMenuBarValueStyleSwitchesBoundedTrayValuesBetweenAmountAndPercent() async {
+        let provider = Provider(id: "example", displayName: "Example", icon: .providerMark("cursor"))
+        let month = WidgetDescriptor.boundedYuan(id: "example.month", provider: provider, title: "This Month", limit: 1000)
+        let balance = WidgetDescriptor.dollarBalance(
+            id: "example.balance",
+            provider: provider,
+            title: "Balance",
+            valueWord: "left"
+        )
+        let runtime = TestProviderRuntime(
+            provider: provider,
+            descriptors: [month, balance],
+            snapshot: ProviderSnapshot(
+                providerID: provider.id,
+                displayName: provider.displayName,
+                lines: [
+                    .progress(label: "This Month", used: 150, limit: 1000, format: .yuan),
+                    .values(label: "Balance", values: [MetricValue(number: 42, kind: .dollars)])
+                ]
+            )
+        )
+        let defaults = makeUserDefaults("menu-bar-value-style")
+        let store = WidgetDataStore(
+            registry: WidgetRegistry(providers: [provider], descriptors: [month, balance]),
+            providers: [runtime],
+            cache: ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots", ttl: 600, now: { Date() }),
+            defaults: defaults
+        )
+        await store.refreshAll()
+
+        store.meterStyle = .used
+        XCTAssertEqual(store.data(for: month).menuBarValue, "¥150 / ¥1K")
+
+        store.menuBarValueStyle = .percent
+        XCTAssertEqual(store.data(for: month).menuBarValue, "15%")
+        // Left-mode reads the complementary share, still off the same limit.
+        store.meterStyle = .remaining
+        XCTAssertEqual(store.data(for: month).menuBarValue, "85%")
+        // An unbounded balance has no limit to take a share of, so it stays an amount either way.
+        XCTAssertEqual(store.data(for: balance).menuBarValue, "$42")
     }
 
     func testCursorCreditsRenderAsUnboundedBalance() async {

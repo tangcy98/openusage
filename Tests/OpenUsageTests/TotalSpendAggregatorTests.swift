@@ -176,4 +176,65 @@ final class TotalSpendAggregatorTests: XCTestCase {
         XCTAssertTrue(total.projection(for: .tokens).isEmpty)
         XCTAssertTrue(total.projection(for: .costPerMtok).isEmpty)
     }
+
+    // MARK: - CNY providers
+
+    private let llmcenter = Provider(id: "llmcenter", displayName: "LLM Center", icon: .providerMark("llmcenter"))
+
+    func testYuanValuesConvertToDollarsAtTheSuppliedRate() {
+        // A CNY-billed provider's row must be converted before it joins a dollar total — summing the
+        // raw yuan figure would inflate both the center number and every provider's share.
+        let snapshots = [
+            "cursor": snapshot(cursor, lines: [spendLine("Today", dollars: 7, tokens: nil)]),
+            "llmcenter": snapshot(llmcenter, lines: [
+                .values(label: "Today", values: [
+                    MetricValue(number: 100, kind: .yuan),
+                    MetricValue(number: 500_000, kind: .count, label: "tokens")
+                ])
+            ])
+        ]
+
+        let total = TotalSpendAggregator.total(
+            for: .today, providers: [cursor, llmcenter], snapshots: snapshots, usdPerCNY: 0.15
+        )
+
+        XCTAssertEqual(total.totalUSD, 22, accuracy: 0.0001)   // 7 + 100 × 0.15
+        XCTAssertEqual(total.totalTokens, 500_000, accuracy: 0.0001)
+        // The rate is a live quote, so anything converted through it is an approximation.
+        XCTAssertTrue(total.slices.first { $0.provider.id == "llmcenter" }?.estimated == true)
+        XCTAssertFalse(total.slices.first { $0.provider.id == "cursor" }?.estimated == true)
+    }
+
+    func testYuanMeterContributesItsUsedSideConverted() {
+        // LLM Center's Today row is a soft-quota meter, not a `.values` row: the aggregator reads the
+        // "used" side as the period's spend so a meter-shaped provider isn't silently dropped.
+        let snapshots = [
+            "llmcenter": snapshot(llmcenter, lines: [
+                .progress(label: "Today", used: 200, limit: 225, format: .yuan)
+            ])
+        ]
+
+        let total = TotalSpendAggregator.total(
+            for: .today, providers: [llmcenter], snapshots: snapshots, usdPerCNY: 0.15
+        )
+
+        XCTAssertEqual(total.totalUSD, 30, accuracy: 0.0001)
+        XCTAssertEqual(total.totalTokens, 0, accuracy: 0.0001)
+        XCTAssertTrue(total.isEstimated)
+    }
+
+    func testPercentAndCountMetersContributeNothing() {
+        // Only money meters carry spend. A percent or count meter labeled "Today" has no dollar
+        // meaning, so it must be excluded rather than counted as its raw number.
+        let snapshots = [
+            "claude": snapshot(claude, lines: [.progress(label: "Today", used: 60, limit: 100, format: .percent)]),
+            "codex": snapshot(codex, lines: [
+                .progress(label: "Today", used: 412, limit: 500, format: .count(suffix: "requests"))
+            ])
+        ]
+
+        let total = TotalSpendAggregator.total(for: .today, providers: [claude, codex], snapshots: snapshots)
+
+        XCTAssertTrue(total.isEmpty)
+    }
 }
