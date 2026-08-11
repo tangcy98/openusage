@@ -1,4 +1,4 @@
-# LLM Center（llm-center.modelbest.cn）API 参考
+# LLM Center（llm-center.modelbest.co）API 参考
 
 > 面向 agent 的协议参考：访问、鉴权、接口、坑位。内容来自 2026-08-05 对真实账号的实测逆向
 > （`llmctl` CLI 行为、官网 SPA JS 反查、curl 直连探测），并已落地为 OpenUsage 的
@@ -6,7 +6,7 @@
 
 ## 概览
 
-- **平台**：面壁智能（ModelBest）的 LLM 用量/费用中心，官网 `https://llm-center.modelbest.cn`。
+- **平台**：面壁智能（ModelBest）的 LLM 用量/费用中心，官网 `https://llm-center.modelbest.co`。
 - **配套 CLI**：`llmctl`（Go，v0.1.0，`LLMC-ANC-0.1` 协议），是官方唯一文档化的访问方式。
 - **前端**：SPA（`/assets/index-bYn18TUE.js` + 懒加载 chunk），路由含 `/usage`、`/usage/billing`、
   `/stability`、`/cli-guide` 等；各页面数据接口拆在 `api-*.js` 模块里。
@@ -17,7 +17,7 @@
 
 ```jsonc
 // ~/Library/Application Support/llmctl/config.json
-{ "api": "https://llm-center.ali.modelbest.co", "web_token": "<347 字符 Rosefinch bearer token>" }
+{ "api": "https://llm-center.modelbest.co", "web_token": "<347 字符 Rosefinch bearer token>" }
 ```
 
 - 请求头：`Authorization: Bearer <web_token>` + `Content-Type: application/json`。
@@ -29,8 +29,12 @@
 
 ## 网络特性（实测）
 
-- 域名解析到内网地址（`30.100.0.x`）；`llm-center.ali.modelbest.co` 301 → `llm-center.modelbest.co`，
-  两者 API 路径都可用。
+- **域名现状（2026-08-09 实测）**：只有 `llm-center.modelbest.co` 可用（内网 `30.100.0.4`，未登录 401，
+  带 token 四个接口全 200）。外网入口 `llm-center.modelbest.cn` 已关闭（解析到华为云 WAF，任何路径恒
+  **HTTP 418「访问被拦截」**）；`llm-center.ali.modelbest.co` 全站 404（含根路径），此前的
+  「301 跳转到主域名」行为已不存在。
+- OpenUsage 用 `LLMCenterHost` 做**退役域名迁移**：读凭证时把已知死掉的 host 换成存活的那个，并 WARN
+  记录；写回 `config.json` 时顺手修复磁盘上的陈旧值（`llmctl` 自己永远不会改）。不认识的 host 原样放行。
 - **间歇性超时**：同一端点有时 0.17s 秒回、有时 20s+ 无响应（`llmctl logs list` 也复现过）。
   请求必须设超时（建议 ≥20s）并容忍失败重试。
 - **大窗口查询不稳定**：窗口越大越易超时（14 天+ 实测超时；月窗口配大 pageSize 必超时）。
@@ -112,6 +116,66 @@ tokens:   promptTokens, completionTokens, totalTokens,
 | `/llm/api/department`、`/llm/api/team-dept-mapping` | 团队/部门 | |
 | `/api/admin/*`（如 `sys-user/queryAll`） | 管理端（需管理员） | |
 
+## CLI 授权协议（`llmctl auth login` 逆向，2026-08-06）
+
+> 这是 OpenUsage「应用内登录」绿色通道的依据。协议通过把 `LLM_CENTER_API_URL` 指向本地抓包服务器、
+> 捕获 `llmctl` 的真实请求确认。三个步骤**都不需要任何现有凭据**，这正是它能作为过期恢复路径的原因。
+
+### 为什么必须由 app 自己做
+
+`llmctl auth login` **只做本地非空检查**：只要 `config.json` 的 `web_token` 字段非空，它就在 ~2ms 内
+空转返回并原样回显旧 token，从不向服务端验证。实测把签名尾部改成 `AAAAAA` 的失效 token 也照样空转。
+所以 token 过期后 CLI 是死路，唯一出路是先清空该字段——或者由 app 自己走完授权。
+
+### 步骤
+
+1. `POST {api}/llm/api/cli/auth/session`，body `{"state":"<48 位 hex>"}`（state 由客户端生成）
+
+   ```jsonc
+   {"code":0,"data":{"state":"…","authorizeUrl":"https://llm-center.modelbest.co/cli-auth?state=…",
+                     "expiresIn":300,"pollIntervalMs":1000}}
+   ```
+
+   **`authorizeUrl` 的 host 与 api host 不同**，必须原样使用服务端返回值，不得自行拼接。
+
+2. 浏览器打开 `authorizeUrl`，用户用已有 SSO 会话确认。
+
+3. **轮询必须是 GET 带 query**：`GET {api}/llm/api/cli/auth/poll?state=…`
+   （同一路径用 POST 返回 **HTTP 500**。）
+
+   ```jsonc
+   {"code":0,"data":{"status":"pending","webToken":null,"appCode":null}}
+   ```
+
+### 成功判据：`webToken` 非空，而不是 status
+
+**完成态实测（2026-08-06 真人授权）**：`{"status":"completed","webToken":"…","appCode":null}`。字面值是
+`completed` —— 不是此前猜测的 `success`/`authorized`。这正说明按猜测的字符串匹配会把服务端真的发来的
+token 丢掉。OpenUsage 以「`webToken` 非空」为唯一成功判据，无视 status 字面值；非 pending 且无 token 的
+status 一律当失败。
+
+**`appCode` 实测为 `null`**：字段在响应里存在，但值为空，因此 OpenUsage 不写 `app_code` 键。下面那条
+配对风险因此在当前服务端行为下不成立（没有新 appCode 可错配），但字段既然存在，服务端将来发非空值时
+仍按「poll 返回则写」处理。
+
+**token 复用**：有效期内重复授权返回的是**同一个** token（两次实测尾部一致），不是每次新签。
+
+### 写回 `config.json` 的约定
+
+OpenUsage 用读-改-写：只设 `web_token`，`api` 仅在缺失时补写，`app_code` 仅在 poll 返回时写；
+`access_key` / `model` / `env` 等 CLI 自有键**逐字保留**。写入走临时文件 + `fchmod 0600` + `rename`，
+保证原子性与权限。
+
+**未验证的配对风险**：若服务端把新 `webToken` 与新的 `appCode`/`sessionId` 绑定而 poll 未全部返回，
+`llmctl` 可能拿到错配组合（OpenUsage 自身只用 `web_token`，不受影响）。2026-08-06 的真实授权实测里
+`appCode` 为 `null`，且事后 `llmctl models list` exit 0，说明当前服务端行为下不成立。
+
+**自动模式的首轮时序**：`hasCompletedFirstRefresh()` 读的是 `WidgetDataStore.lastRefreshAt`，它在
+`refreshAll` **整批结束后**才盖章，而自动触发发生在单个 provider 的 `refresh()` 内部——所以开着
+Auto Sign In 启动时，第一轮必然命中「no refresh pass has completed yet」这道闸，要等下一个刷新周期
+（默认 5 分钟）才会自动弹。实测：14:02:28 被挡，14:07:32 触发。这符合「避免启动即抢焦点」的设计意图，
+但延迟比预期长。
+
 ## 坑位总结
 
 1. **不要翻页**：`page` 被忽略，翻页会拿到完全相同的重复数据 → 金额翻倍（OpenUsage 曾因此出现
@@ -124,6 +188,12 @@ tokens:   promptTokens, completionTokens, totalTokens,
 6. **官网统计 ≠ call-log**：官网 UI 的数字来自权限/身份受限的统计端点，与 call-log 逐条求和口径
    可能不同；对齐前先确认两边身份一致。
 7. **间歇超时**：端点偶发 20s+ 无响应，需超时 + 重试 + 失败降级（保留上次成功数据）。
+8. **`llmctl auth login` 无法重登**：见「CLI 授权协议」——它只查本地字段非空，不验证服务端。
+9. **api 地址会失效，且 CLI 不会修**：`llmctl` 把首次登录时的 host 写进 `config.json` 后再不更新，
+   所以域名一退役，老配置就是死的——症状是每个指标报 HTTP 404 或 418 而非 401。2026-08-09 实测：
+   `.cn` 外网入口关闭（WAF 恒 418）、`…ali.modelbest.co` 全站 404，只剩 `llm-center.modelbest.co`。
+   OpenUsage 用 `LLMCenterHost` 迁移已知退役 host（读时替换 + 写回时修复磁盘值），token 不必重换；
+   没见过的 host 不动，避免把用户自己的部署悄悄重定向走。
 
 ## OpenUsage 集成现状
 
@@ -131,5 +201,9 @@ tokens:   promptTokens, completionTokens, totalTokens,
 - 指标：Today / This Month（自然月）/ Yesterday / Usage Trend（月内每日 tokens），全部 ¥。
 - 凭证：读 `~/Library/Application Support/llmctl/config.json`，无手动输入；`hasLocalCredentials()`
   探该文件，首次启动自动启用。
-- 实现：`Sources/OpenUsage/Providers/LLMCenter/`（AuthStore / UsageClient / UsageMapper / Provider）。
+- 应用内登录：token 过期（`ErrorCategory.authExpired`）时卡片出现 Sign In 行，走上面的 CLI 授权协议
+  拿新 token 写回同一个 `config.json`。默认手动点击；Settings → General 的 **Auto Sign In to LLM
+  Center** 打开后每个 app 会话自动弹一次。首次登录仍需 `llmctl auth login`（它提供 `api` 地址）。
+- 实现：`Sources/OpenUsage/Providers/LLMCenter/`（AuthStore / AuthClient / Host / SignInService /
+  UsageClient / UsageMapper / Provider）。
 - 文档：`docs/providers/llmcenter.md`（用户向）。
