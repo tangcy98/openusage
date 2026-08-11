@@ -8,14 +8,60 @@ final class LLMCenterAuthStoreTests: XCTestCase {
 
     func testReadsLoginFromConfigFile() throws {
         let store = LLMCenterAuthStore(
-            files: FakeFiles([configPath: #"{"api":"https://llm-center.ali.modelbest.co","web_token":"tok-123"}"#]),
+            files: FakeFiles([configPath: #"{"api":"https://llm-center.modelbest.co","web_token":"tok-123"}"#]),
             configPath: configPath
         )
 
         let auth = try store.loadAuth()
 
-        XCTAssertEqual(auth?.apiBaseURL, "https://llm-center.ali.modelbest.co")
+        XCTAssertEqual(auth?.apiBaseURL, "https://llm-center.modelbest.co")
         XCTAssertEqual(auth?.webToken, "tok-123")
+    }
+
+    /// The public `.cn` entry point was shut down (a WAF answers every path), and `llmctl` never
+    /// revises the host it recorded — so a login made before the shutdown must be migrated on read or
+    /// every metric fails against a dead host.
+    func testRetiredHostIsMigratedOnRead() throws {
+        let store = LLMCenterAuthStore(
+            files: FakeFiles([configPath: #"{"api":"https://llm-center.modelbest.cn","web_token":"tok-123"}"#]),
+            configPath: configPath
+        )
+
+        XCTAssertEqual(try store.loadAuth()?.apiBaseURL, "https://llm-center.modelbest.co")
+        XCTAssertEqual(try store.loadAPIBaseURL(), "https://llm-center.modelbest.co")
+    }
+
+    func testRetiredAliHostIsMigratedOnRead() throws {
+        let store = LLMCenterAuthStore(
+            files: FakeFiles([configPath: #"{"api":"https://llm-center.ali.modelbest.co","web_token":"tok-123"}"#]),
+            configPath: configPath
+        )
+
+        XCTAssertEqual(try store.loadAuth()?.apiBaseURL, "https://llm-center.modelbest.co")
+    }
+
+    /// Only hosts confirmed dead are rewritten. A deployment we've never heard of is passed through —
+    /// silently redirecting it would be worse than failing honestly.
+    func testUnknownHostIsLeftAlone() throws {
+        let store = LLMCenterAuthStore(
+            files: FakeFiles([configPath: #"{"api":"https://llm-center.internal.example","web_token":"t"}"#]),
+            configPath: configPath
+        )
+
+        XCTAssertEqual(try store.loadAuth()?.apiBaseURL, "https://llm-center.internal.example")
+    }
+
+    /// Migrating only in memory would leave `llmctl` itself pointed at the dead host, so a sign-in
+    /// write repairs the recorded value too.
+    func testSaveRepairsARetiredHostOnDisk() throws {
+        let files = FakeFiles([configPath: #"{"api":"https://llm-center.modelbest.cn","web_token":"old"}"#])
+        let store = LLMCenterAuthStore(files: files, configPath: configPath)
+
+        try store.save(webToken: "tok-new", appCode: nil, api: "https://llm-center.modelbest.co")
+
+        let saved = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(XCTUnwrap(files.files[configPath]).utf8)) as? [String: Any])
+        XCTAssertEqual(saved["api"] as? String, "https://llm-center.modelbest.co")
+        XCTAssertEqual(saved["web_token"] as? String, "tok-new")
     }
 
     func testMissingFileIsNotLoggedIn() throws {
@@ -31,6 +77,35 @@ final class LLMCenterAuthStoreTests: XCTestCase {
         )
 
         XCTAssertNil(try store.loadAuth())
+    }
+
+    /// Sign-in needs the server host even when the token is gone — that's the whole point of the
+    /// recovery path — so this reads through where `loadAuth()` returns nil.
+    func testLoadAPIBaseURLReturnsAPIEvenWithoutWebToken() throws {
+        let store = LLMCenterAuthStore(
+            files: FakeFiles([configPath: #"{"api":"https://example.com","web_token":""}"#]),
+            configPath: configPath
+        )
+
+        XCTAssertNil(try store.loadAuth())
+        XCTAssertEqual(try store.loadAPIBaseURL(), "https://example.com")
+    }
+
+    func testLoadAPIBaseURLIsNilOnAMachineThatNeverRanTheCLI() throws {
+        let store = LLMCenterAuthStore(files: FakeFiles(), configPath: configPath)
+
+        XCTAssertNil(try store.loadAPIBaseURL())
+    }
+
+    func testSaveRewritesAnUnparsableConfigRatherThanTrappingTheUser() throws {
+        let files = FakeFiles([configPath: "not-json"])
+        let store = LLMCenterAuthStore(files: files, configPath: configPath)
+
+        try store.save(webToken: "tok-new", appCode: nil, api: "https://example.com")
+
+        let saved = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(XCTUnwrap(files.files[configPath]).utf8)) as? [String: Any])
+        XCTAssertEqual(saved["web_token"] as? String, "tok-new")
+        XCTAssertEqual(saved["api"] as? String, "https://example.com")
     }
 
     func testInvalidJSONThrows() {
@@ -146,7 +221,7 @@ final class LLMCenterProviderTests: XCTestCase {
 
     private func makeProvider(
         http: RoutingHTTPClient,
-        config: String? = #"{"api":"https://llm-center.ali.modelbest.co","web_token":"tok-123"}"#
+        config: String? = #"{"api":"https://llm-center.modelbest.co","web_token":"tok-123"}"#
     ) -> LLMCenterProvider {
         let now = pinnedNow
         return LLMCenterProvider(

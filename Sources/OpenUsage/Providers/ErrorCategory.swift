@@ -177,6 +177,7 @@ extension LLMCenterAuthError: CategorizedError {
         switch self {
         case .notLoggedIn: .notLoggedIn
         case .credentialsUnreadable: .credentialAccess
+        case .saveFailed: .credentialAccess
         }
     }
 }
