@@ -34,6 +34,10 @@ llmctl auth login
 
 登录会在本机写入 `~/Library/Application Support/llmctl/config.json`。OpenUsage 直接读这个文件（不会去调用 `llmctl`），所以之后换号或 token 轮换，下次刷新就会自动生效。
 
+> LLM Center 换过域名，而 `llmctl` 不会更新它当初记下的地址。老配置里的 `llm-center.modelbest.cn`（外网入口，已关闭）和 `…ali.modelbest.*` 会被 OpenUsage 自动切到内网的 `llm-center.modelbest.co`，不需要你手动改配置文件。
+
+**首次登录必须用 CLI**，因为这一步同时把 API 地址写进了配置文件；OpenUsage 不会去猜这个地址。但**之后 token 过期不用再回终端**——卡片上会出现 **Sign In to LLM Center** 按钮，点一下就在浏览器里完成授权、写回同一个配置文件。（重新执行 `llmctl auth login` 对过期的 token 无效：它只检查本地字段非空，不会向服务端验证。）
+
 **还需要满足：**
 
 - **能访问 LLM Center 内网**——需要连公司网络或 VPN。断网时会显示连接错误，而不是旧数据。
@@ -85,7 +89,8 @@ llmctl auth login
 |---|---|
 | **"OpenUsage 已损坏"** | 没执行安装第 2 步的 `xattr` 命令 |
 | **"Not logged in to LLM Center"** | 执行 `llmctl auth login`，然后刷新 |
-| **"LLM Center login expired"** | token 失效了，重新 `llmctl auth login`，然后刷新 |
+| **"LLM Center login expired"** | 点卡片上的 **Sign In to LLM Center**，在浏览器里确认即可（重跑 `llmctl auth login` 没用） |
+| **每个指标都报 HTTP 404 / 418** | 配置文件里的 `api` 地址已失效。已知的旧地址（`llm-center.modelbest.cn`、`…ali.modelbest.*`）App 会自动切到可用地址；若仍报错说明是个没见过的地址，手动改成可访问的即可，token 不用换 |
 | **连接错误 / 数字不更新** | 检查是否连着公司网络或 VPN |
 | **有额度但显示不出来** | 确认账号已归属部门且分配了月度额度 |
 
@@ -95,8 +100,10 @@ llmctl auth login
 # 应当输出包含 "api" 和 "web_token" 的内容
 cat ~/Library/Application\ Support/llmctl/config.json
 
-# 应当能连通，不应超时
-curl -sS -o /dev/null -w '%{http_code}\n' https://llm-center.ali.modelbest.co
+# 用配置文件里的那个 api 地址探测（不要写死域名——地址是会变的）。
+# 401 说明地址有效、只是没带 token；404 说明这个地址已经不服务了，需要换。
+API=$(python3 -c 'import json,os;print(json.load(open(os.path.expanduser("~/Library/Application Support/llmctl/config.json")))["api"])')
+curl -sS -o /dev/null -w '%{http_code}\n' "$API"
 ```
 
 ---

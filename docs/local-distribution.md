@@ -67,9 +67,13 @@ build carries no account of yours. For the LLM Center rows to populate, a recipi
    fresh or rotated login on the next refresh. Without this file the provider reports
    *"Not logged in to LLM Center"*.
 
-2. **Network reachability to the LLM Center API host** (`https://llm-center.ali.modelbest.co`) — it's on
-   the internal network, so they need to be on the office network or VPN. Off-network, the rows show a
-   connection error rather than stale numbers.
+2. **Network reachability to the LLM Center API host** — whatever `api` says in that same
+   `config.json`. It's on the internal network, so they need to be on the office network or VPN.
+   Off-network, the rows show a connection error rather than stale numbers. That host does change
+   occasionally, and `llmctl` never revises the one it recorded: OpenUsage redirects the hosts it knows
+   are retired (`llm-center.modelbest.cn` and the `…ali.modelbest.*` pair) to the live one on its own.
+   If *every* metric still reports HTTP 404 or 418, the recorded `api` is a host OpenUsage has never
+   seen and needs pointing at the current one — the token stays valid.
 
 3. **An LLM Center account with a department membership and a monthly quota.** The quota meter comes
    from their own row in the department member list. An account not attached to a department has no
@@ -81,7 +85,11 @@ Everything is per-user: two people running the same DMG each see their own numbe
 
 ```bash
 cat ~/Library/Application\ Support/llmctl/config.json    # should show "api" and "web_token"
-curl -sS -o /dev/null -w '%{http_code}\n' https://llm-center.ali.modelbest.co   # should not hang/fail
+
+# Probe the host that config.json actually records — don't hardcode a domain, it changes.
+# 401 means the host is alive and just wants a token; 404 means it has been retired.
+API=$(python3 -c 'import json,os;print(json.load(open(os.path.expanduser("~/Library/Application Support/llmctl/config.json")))["api"])')
+curl -sS -o /dev/null -w '%{http_code}\n' "$API"
 ```
 
 Then open OpenUsage and hit Refresh. See [LLM Center](providers/llmcenter.md) for the metric-by-metric
