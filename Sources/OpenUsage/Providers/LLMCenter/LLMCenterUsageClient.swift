@@ -13,7 +13,10 @@ enum LLMCenterUsageError: Error, LocalizedError, Equatable {
         case .invalidResponse:
             return "LLM Center usage data unavailable. Try again later."
         case .invalidToken:
-            return "LLM Center login expired. Run `llmctl auth login` again, then refresh."
+            // Deliberately NOT "run `llmctl auth login`": that command short-circuits on any non-empty
+            // `web_token` without validating it, so it cannot replace an expired one. The card's Sign In
+            // button is the way out.
+            return "LLM Center login expired. Click Sign In on the LLM Center card."
         case .requestFailed(let status):
             return "LLM Center request failed (HTTP \(status))."
         }

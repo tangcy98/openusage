@@ -7,7 +7,7 @@ final class LLMCenterProvider: ProviderRuntime {
         displayName: "LLM Center",
         icon: .providerMark("llmcenter"),
         links: [
-            ProviderLink(label: "Usage", url: "https://llm-center.modelbest.cn/usage")
+            ProviderLink(label: "Usage", url: "https://llm-center.modelbest.co/usage")
         ]
     )
 
