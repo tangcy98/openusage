@@ -51,6 +51,10 @@ account-wide. Quotas, plans, balances, and provider errors always describe this 
 
 Rows with a reset date tick every 30 seconds, so countdowns and pace stay live between refreshes.
 
+A card can also carry an action row when its provider needs one. Today only LLM Center has one: an
+expired login puts a **Sign In to LLM Center** button on the card, above the caret so it isn't hidden
+behind it. See [LLM Center](providers/llmcenter.md#signing-in-from-the-app).
+
 ## Right-click menus
 
 Every row: **Hide · Star for menu bar / Unstar · Refresh \<provider\> · Customize…** (Customize opens straight to that provider's metrics.)
