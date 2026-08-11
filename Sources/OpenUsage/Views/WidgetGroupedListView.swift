@@ -14,6 +14,7 @@ struct WidgetGroupedListView: View {
     @Environment(LayoutStore.self) private var layout
     @Environment(WidgetDataStore.self) private var dataStore
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.llmCenterSignIn) private var llmCenterSignIn
     let reorderSpaceName: String
     @Binding var reorderLift: ReorderLift?
 
@@ -142,6 +143,10 @@ struct WidgetGroupedListView: View {
         /// bottom of the collapsible expanded section. They collapse with the caret — part of the
         /// expander, not always-visible chrome.
         case links([ProviderLink])
+        /// LLM Center only: the in-app sign-in action shown when its token has expired. Deliberately a
+        /// special case rather than a general "provider action" slot — `llmctl auth login` is uniquely
+        /// unable to replace an expired token, so no other provider needs this today.
+        case signIn
 
         var id: String {
             switch self {
@@ -151,6 +156,8 @@ struct WidgetGroupedListView: View {
                 "expanded-divider"
             case .links:
                 "provider-links"
+            case .signIn:
+                "llmcenter-signin"
             }
         }
     }
@@ -171,7 +178,8 @@ struct WidgetGroupedListView: View {
             expandedRows: expandedRows,
             hasExpandedMetrics: group.hasExpandedMetrics,
             isExpanded: isExpanded,
-            links: group.provider.visibleLinks
+            links: group.provider.visibleLinks,
+            showsSignIn: showsSignInRow(for: providerID)
         )
         // Same card builder the lifted preview uses, so the floating chip can't drift from the live card.
         return DashboardMetricCard {
@@ -185,6 +193,8 @@ struct WidgetGroupedListView: View {
                         condensedTop: condensedIDs.contains(entry.descriptor.id))
                 case .links(let links):
                     ProviderLinksView(links: links)
+                case .signIn:
+                    LLMCenterSignInRow()
                 case .divider:
                     expandToggle(providerID: providerID, isExpanded: isExpanded)
                 }
@@ -204,7 +214,8 @@ struct WidgetGroupedListView: View {
         expandedRows: [ResolvedRow],
         hasExpandedMetrics: Bool,
         isExpanded: Bool,
-        links: [ProviderLink]
+        links: [ProviderLink],
+        showsSignIn: Bool
     ) -> [DashboardMetricCardRow] {
         // #596: provider quick-link buttons live INSIDE the collapsible expanded section, pinned at its
         // bottom, so collapsing the caret hides them along with the expanded metrics — they're part of
@@ -212,10 +223,21 @@ struct WidgetGroupedListView: View {
         // content (metrics OR links), so a links-only provider still gets a caret to reveal its buttons.
         let hasLinks = !links.isEmpty
         let hasExpandedContent = hasExpandedMetrics || hasLinks
+        // The sign-in row goes ABOVE the caret: the card is showing stale numbers because the login
+        // broke, so its recovery action must not be collapsed out of sight.
         return alwaysRows.map(DashboardMetricCardRow.metric)
+            + (showsSignIn ? [.signIn] : [])
             + (hasExpandedContent ? [.divider] : [])
             + (isExpanded && !expandedRows.isEmpty ? expandedRows.map(DashboardMetricCardRow.metric) : [])
             + (isExpanded && hasLinks ? [.links(links)] : [])
+    }
+
+    /// LLM Center's expired-token recovery row. Visible while the provider's latest failure is an expiry,
+    /// and kept alive through an in-flight or just-finished sign-in so the result state isn't yanked off
+    /// screen the moment the refresh clears the error.
+    private func showsSignInRow(for providerID: String) -> Bool {
+        guard providerID == "llmcenter", let llmCenterSignIn else { return false }
+        return dataStore.errorCategory(for: providerID) == .authExpired || llmCenterSignIn.phase != .idle
     }
 
     /// The centered caret at the bottom of a provider card that reveals or hides its On Demand metrics
