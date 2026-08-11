@@ -40,6 +40,11 @@ final class AppContainer {
     /// provider were ever removed from the registry. Injected into the view tree via
     /// `\.codexResetClaim`.
     let codexResetClaim: CodexResetClaimService?
+    /// Completes an LLM Center CLI authorization from inside the app, for the one case the CLI can't
+    /// handle: an expired `web_token`, which `llmctl auth login` mistakes for "already signed in" and
+    /// refuses to replace. Shares the LLM Center provider's auth store so both read and write the same
+    /// `config.json`. Injected into the view tree via `\.llmCenterSignIn`.
+    let llmCenterSignIn: LLMCenterSignInService?
     /// The account registry the launch pass reconciled. The UI observes it live: a rename
     /// (`customLabel`) re-titles the card everywhere without a relaunch.
     let accounts: ProviderAccountsStore
@@ -173,6 +178,38 @@ final class AppContainer {
             )
         }
 
+        // LLM Center's in-app sign-in, sharing the provider's auth store so the app and `llmctl` keep
+        // reading and writing one `config.json`. After a successful authorization the provider is
+        // force-refreshed so the card drops its expired-login error without waiting for the next cycle;
+        // the failure backoff has to be cleared first, because `force` only bypasses the check for THIS
+        // call and the following periodic pass would otherwise still be swallowed.
+        let llmCenterSignIn = providers.compactMap { $0 as? LLMCenterProvider }.first.map { llmCenter in
+            LLMCenterSignInService(
+                authStore: llmCenter.authStore,
+                refreshAfterSignIn: { [weak dataStore] in
+                    guard let dataStore else { return }
+                    dataStore.clearFailureBackoff(for: llmCenter.provider.id)
+                    for attempt in 0..<10 {
+                        switch await dataStore.refresh(providerID: llmCenter.provider.id, force: true) {
+                        case .refreshed, .cacheHit, .backedOff:
+                            return
+                        case .failed:
+                            // The card's own error surface now carries the reason; a retry loop here
+                            // would just delay showing it.
+                            AppLog.warn(LogTag.plugin("llmcenter"), "post-sign-in refresh failed; the card shows the reason")
+                            return
+                        case .skipped:
+                            AppLog.info(LogTag.plugin("llmcenter"), "post-sign-in refresh waiting out an in-flight refresh (attempt \(attempt + 1))")
+                            try? await Task.sleep(for: .seconds(1))
+                        }
+                    }
+                    AppLog.error(LogTag.plugin("llmcenter"), "post-sign-in refresh kept being skipped; the card may lag until the next cycle")
+                },
+                hasCompletedFirstRefresh: { [weak dataStore] in dataStore?.lastRefreshAt != nil }
+            )
+        }
+        self.llmCenterSignIn = llmCenterSignIn
+
         // Anonymous, opt-out usage telemetry (two daily-rollup events). Its state lives in a dedicated
         // UserDefaults suite, kept separate from app settings so the user's opt-out choice and the
         // install id stay independent of any settings change. The snapshot closure reads the live
@@ -198,8 +235,14 @@ final class AppContainer {
                 )
             }
         )
-        dataStore.onRefreshOutcome = { [weak telemetry] providerID, outcome, category, manual in
+        dataStore.onRefreshOutcome = { [weak telemetry, weak llmCenterSignIn] providerID, outcome, category, manual in
             telemetry?.record(providerID: providerID, outcome: outcome, category: category, manual: manual)
+            // The green channel's automatic half: an expired LLM Center login is the one failure the app
+            // can fix by itself. Every gate (setting off, already in flight, once-per-session, wait for
+            // the first refresh pass) lives inside the service.
+            if providerID == "llmcenter", outcome == .failed, category == .authExpired {
+                llmCenterSignIn?.signInAutomatically()
+            }
         }
         self.telemetry = telemetry
         self.transparency = PopoverTransparencyStore()

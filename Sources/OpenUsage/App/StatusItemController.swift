@@ -68,6 +68,7 @@ final class StatusItemController: NSObject {
                     .environment(container.transparency)
                     .environment(updater)
                     .environment(\.codexResetClaim, container.codexResetClaim)
+                    .environment(\.llmCenterSignIn, container.llmCenterSignIn)
             )
         )
         // The host view fills the panel. SwiftUI measures each screen and drives the panel height;
