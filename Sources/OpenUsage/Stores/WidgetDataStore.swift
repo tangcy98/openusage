@@ -77,6 +77,11 @@ final class WidgetDataStore {
     /// renders it as a warning indicator beside the provider name; the last good snapshot keeps
     /// displaying (stale-while-revalidate) instead of being replaced by dead "No data" rows.
     var providerErrors: [String: String] = [:]
+    /// The machine-readable bucket for the same failure, kept in lockstep with `providerErrors`. The
+    /// message is free-form prose meant for the user; the dashboard needs to *decide* things from a
+    /// failure (currently: whether the LLM Center card offers an in-app sign-in), and matching on prose
+    /// would break the first time the copy is reworded.
+    var providerErrorCategories: [String: ErrorCategory] = [:]
 
     /// Per-provider earliest next-probe time after a failure (see `failureRetryBackoff`). Not part of
     /// observable UI state, so it's excluded from `@Observable` tracking.
@@ -336,6 +341,7 @@ final class WidgetDataStore {
             // Failed refresh: surface the error but keep the last good snapshot on screen rather than
             // collapsing every row to "No data". The provider error string is already user-safe.
             providerErrors[providerID] = message
+            providerErrorCategories[providerID] = snapshot.errorCategory
             // Negative-cache the failure so a wake burst can't re-probe this provider in a tight loop.
             failureRetryAfter[providerID] = now().addingTimeInterval(Self.failureRetryBackoff)
             AppLog.warn(.refresh, "\(providerID) failed: \(message)")
@@ -344,6 +350,7 @@ final class WidgetDataStore {
         }
         if providerErrors[providerID] != nil {
             providerErrors[providerID] = nil
+            providerErrorCategories[providerID] = nil
         }
         // Recovered: drop any backoff so the provider resumes the normal cadence immediately.
         failureRetryAfter[providerID] = nil
@@ -529,6 +536,12 @@ final class WidgetDataStore {
     /// The provider's latest refresh error, or `nil` when its last refresh succeeded.
     func errorMessage(for providerID: String) -> String? {
         providerErrors[providerID]
+    }
+
+    /// The same failure as a stable category, for views that need to branch on the *kind* of error
+    /// rather than display it. `nil` whenever `errorMessage(for:)` is `nil`.
+    func errorCategory(for providerID: String) -> ErrorCategory? {
+        providerErrorCategories[providerID]
     }
 
     /// A soft, non-blocking notice from the provider's latest *successful* snapshot (e.g. Claude's

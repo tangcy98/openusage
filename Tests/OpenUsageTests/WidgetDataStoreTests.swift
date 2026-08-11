@@ -114,6 +114,40 @@ final class WidgetDataStoreTests: XCTestCase {
         XCTAssertEqual(store.headerNotice(for: provider.id), "Token expired. Run `claude` to log in again.")  // error wins
     }
 
+    func testProviderErrorCategoryIsPublishedAndClearedWithTheMessage() async {
+        // The dashboard branches on the *kind* of failure (LLM Center's expired-login sign-in row), so
+        // the category has to travel with the message and disappear with it.
+        let provider = Provider(id: "test", displayName: "Test", icon: .providerMark("claude"))
+        let meter = WidgetDescriptor(
+            id: "test.session",
+            providerID: provider.id,
+            metricLabel: "Session",
+            sample: WidgetData(title: "Session", icon: provider.icon, kind: .percent, used: 0, limit: 100)
+        )
+        let runtime = TogglingProviderRuntime(
+            provider: provider,
+            descriptors: [meter],
+            first: ProviderSnapshot.error(provider: provider, message: "Token expired.", category: .authExpired),
+            second: ProviderSnapshot(
+                providerID: provider.id,
+                displayName: provider.displayName,
+                lines: [.progress(label: "Session", used: 42, limit: 100, format: .percent)]
+            )
+        )
+        let store = WidgetDataStore(
+            registry: WidgetRegistry(providers: [provider], descriptors: [meter]),
+            providers: [runtime],
+            defaults: makeUserDefaults("error-category")
+        )
+
+        await store.refreshAll(force: true)  // failure
+        XCTAssertEqual(store.errorCategory(for: provider.id), .authExpired)
+
+        await store.refreshAll(force: true)  // recovery
+        XCTAssertNil(store.errorMessage(for: provider.id))
+        XCTAssertNil(store.errorCategory(for: provider.id))
+    }
+
     func testRemainingProgressWithoutResetUsesPeriodDurationLabel() {
         let session = WidgetData(
             title: "Session",
