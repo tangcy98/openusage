@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- LLM Center: sign in from inside the app when the saved token expires. The card grows a **Sign In to
+  LLM Center** button that runs the same browser authorization the CLI uses and writes the new token
+  back into `llmctl`'s own `config.json`, preserving every other key in it. This is the only way to
+  recover: `llmctl auth login` treats any non-empty `web_token` as "already signed in" and never checks
+  it with the server, so re-running it does nothing. A new Settings → General toggle, **Auto Sign In to
+  LLM Center** (off by default), lets the app open the browser by itself once per launch. The first-ever
+  login still needs `llmctl auth login` — that's what records the API host.
+- LLM Center: keep working after the platform retired its public hostname. `llmctl` records the API host
+  at first login and never revises it, so logins made against `llm-center.modelbest.cn` (now answered by
+  a WAF with HTTP 418) or `llm-center.ali.modelbest.co` (404 everywhere) failed on every metric with no
+  fix short of hand-editing JSON. OpenUsage now redirects those retired hosts to the live
+  `llm-center.modelbest.co` when it reads the login, and repairs the recorded value the next time it
+  writes the file, so `llmctl` recovers too. Hosts it doesn't recognize are left exactly as written.
+
 ## v0.7.7-beta.1
 
 ### Bug Fixes
