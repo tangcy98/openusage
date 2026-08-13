@@ -79,7 +79,7 @@ final class WidgetDataStore {
     var providerErrors: [String: String] = [:]
     /// The machine-readable bucket for the same failure, kept in lockstep with `providerErrors`. The
     /// message is free-form prose meant for the user; the dashboard needs to *decide* things from a
-    /// failure (currently: whether the LLM Center card offers an in-app sign-in), and matching on prose
+    /// failure (currently: whether the LLMCenter card offers an in-app sign-in), and matching on prose
     /// would break the first time the copy is reworded.
     var providerErrorCategories: [String: ErrorCategory] = [:]
 

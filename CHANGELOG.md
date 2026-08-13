@@ -2,19 +2,32 @@
 
 ## Unreleased
 
-- LLM Center: sign in from inside the app when the saved token expires. The card grows a **Sign In to
-  LLM Center** button that runs the same browser authorization the CLI uses and writes the new token
-  back into `llmctl`'s own `config.json`, preserving every other key in it. This is the only way to
-  recover: `llmctl auth login` treats any non-empty `web_token` as "already signed in" and never checks
-  it with the server, so re-running it does nothing. A new Settings → General toggle, **Auto Sign In to
-  LLM Center** (off by default), lets the app open the browser by itself once per launch. The first-ever
-  login still needs `llmctl auth login` — that's what records the API host.
-- LLM Center: keep working after the platform retired its public hostname. `llmctl` records the API host
-  at first login and never revises it, so logins made against `llm-center.modelbest.cn` (now answered by
-  a WAF with HTTP 418) or `llm-center.ali.modelbest.co` (404 everywhere) failed on every metric with no
-  fix short of hand-editing JSON. OpenUsage now redirects those retired hosts to the live
-  `llm-center.modelbest.co` when it reads the login, and repairs the recorded value the next time it
-  writes the file, so `llmctl` recovers too. Hosts it doesn't recognize are left exactly as written.
+- LLMCenter: sign in from inside the app — no command-line tool required, first time or after an
+  expiry. The card grows a **Sign In to LLMCenter** button that runs the platform's browser
+  authorization and saves the token to `~/Library/Application Support/llmctl/config.json`, preserving
+  every other key in that file so the `llmctl` CLI keeps working off the same login for anyone who uses
+  it. A new Settings → General toggle, **Auto Sign In to LLMCenter** (off by default), lets the app
+  open the browser by itself once per launch when it finds the login expired.
+- LLMCenter: keep working after the platform retired its public hostname. A login records the API host
+  it was made against and nothing revises it afterwards, so logins made against
+  `llm-center.modelbest.cn` (now answered by a WAF with HTTP 418) or `llm-center.ali.modelbest.co` (404
+  everywhere) failed on every metric with no fix short of hand-editing JSON. OpenUsage now redirects
+  those retired hosts to the live `llm-center.modelbest.co` when it reads the login, and repairs the
+  recorded value the next time it writes the file. Hosts it doesn't recognize are left exactly as
+  written.
+- Privacy: LLMCenter is withheld from **Share Anonymous Usage** entirely. It's an in-house provider, and
+  while no usage value was ever shared for any provider, the id alone would tell the analytics host that
+  a machine talks to an internal service. Its provider id, its metric ids, and its refresh counts are now
+  filtered out of both daily events regardless of the toggle — including any counts a previous build had
+  already saved to disk.
+- Privacy: **Share Anonymous Usage** now defaults to **off** in this fork. Crash reports ride the same
+  switch and their stack traces can name in-house code, which no property filter can redact — so this
+  build stays silent until someone turns sharing on. (Upstream OpenUsage remains opt-out.)
+- LLMCenter: on from the first launch, without a credential check. First-run detection only enables
+  providers whose credentials it finds on the Mac, but LLMCenter's credentials are created by the card's
+  own **Sign In to LLMCenter** button — so a colleague who had never signed in saw no card and no button,
+  and had to find the provider in Customize first. It is now seeded on regardless of what detection
+  finds. Turning it off is still a real choice: it stays off on every later launch.
 
 ## v0.7.7-beta.1
 

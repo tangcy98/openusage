@@ -18,9 +18,9 @@ final class LLMCenterAuthStoreTests: XCTestCase {
         XCTAssertEqual(auth?.webToken, "tok-123")
     }
 
-    /// The public `.cn` entry point was shut down (a WAF answers every path), and `llmctl` never
-    /// revises the host it recorded — so a login made before the shutdown must be migrated on read or
-    /// every metric fails against a dead host.
+    /// The public `.cn` entry point was shut down (a WAF answers every path), and a saved login keeps
+    /// naming the host it was made against — so a login made before the shutdown must be migrated on
+    /// read or every metric fails against a dead host.
     func testRetiredHostIsMigratedOnRead() throws {
         let store = LLMCenterAuthStore(
             files: FakeFiles([configPath: #"{"api":"https://llm-center.modelbest.cn","web_token":"tok-123"}"#]),
@@ -51,8 +51,8 @@ final class LLMCenterAuthStoreTests: XCTestCase {
         XCTAssertEqual(try store.loadAuth()?.apiBaseURL, "https://llm-center.internal.example")
     }
 
-    /// Migrating only in memory would leave `llmctl` itself pointed at the dead host, so a sign-in
-    /// write repairs the recorded value too.
+    /// Migrating only in memory would leave a dead host on disk for anything else reading the file, so
+    /// a sign-in write repairs the recorded value too.
     func testSaveRepairsARetiredHostOnDisk() throws {
         let files = FakeFiles([configPath: #"{"api":"https://llm-center.modelbest.cn","web_token":"old"}"#])
         let store = LLMCenterAuthStore(files: files, configPath: configPath)
@@ -91,10 +91,12 @@ final class LLMCenterAuthStoreTests: XCTestCase {
         XCTAssertEqual(try store.loadAPIBaseURL(), "https://example.com")
     }
 
-    func testLoadAPIBaseURLIsNilOnAMachineThatNeverRanTheCLI() throws {
+    func testLoadAPIBaseURLFallsBackToTheLiveHostWhenNoFileExists() throws {
+        // First run with nothing on disk: sign-in still has a server to authorize against, which is what
+        // makes the first login possible without any external setup.
         let store = LLMCenterAuthStore(files: FakeFiles(), configPath: configPath)
 
-        XCTAssertNil(try store.loadAPIBaseURL())
+        XCTAssertEqual(try store.loadAPIBaseURL(), LLMCenterHost.live)
     }
 
     func testSaveRewritesAnUnparsableConfigRatherThanTrappingTheUser() throws {
@@ -119,7 +121,7 @@ final class LLMCenterAuthStoreTests: XCTestCase {
         }
     }
 
-    func testDefaultConfigPathTargetsLlmctlLogin() {
+    func testDefaultConfigPathTargetsTheSharedConfigFile() {
         XCTAssertTrue(LLMCenterAuthStore.defaultConfigPath().hasSuffix("llmctl/config.json"))
     }
 }

@@ -179,7 +179,7 @@ final class TotalSpendAggregatorTests: XCTestCase {
 
     // MARK: - CNY providers
 
-    private let llmcenter = Provider(id: "llmcenter", displayName: "LLM Center", icon: .providerMark("llmcenter"))
+    private let llmcenter = Provider(id: "llmcenter", displayName: "LLMCenter", icon: .providerMark("llmcenter"))
 
     func testYuanValuesConvertToDollarsAtTheSuppliedRate() {
         // A CNY-billed provider's row must be converted before it joins a dollar total — summing the
@@ -206,7 +206,7 @@ final class TotalSpendAggregatorTests: XCTestCase {
     }
 
     func testYuanMeterContributesItsUsedSideConverted() {
-        // LLM Center's Today row is a soft-quota meter, not a `.values` row: the aggregator reads the
+        // LLMCenter's Today row is a soft-quota meter, not a `.values` row: the aggregator reads the
         // "used" side as the period's spend so a meter-shaped provider isn't silently dropped.
         let snapshots = [
             "llmcenter": snapshot(llmcenter, lines: [

@@ -40,9 +40,8 @@ final class AppContainer {
     /// provider were ever removed from the registry. Injected into the view tree via
     /// `\.codexResetClaim`.
     let codexResetClaim: CodexResetClaimService?
-    /// Completes an LLM Center CLI authorization from inside the app, for the one case the CLI can't
-    /// handle: an expired `web_token`, which `llmctl auth login` mistakes for "already signed in" and
-    /// refuses to replace. Shares the LLM Center provider's auth store so both read and write the same
+    /// Completes an LLMCenter browser authorization from inside the app, so signing in never requires
+    /// a terminal. Shares the LLMCenter provider's auth store so both read and write the same
     /// `config.json`. Injected into the view tree via `\.llmCenterSignIn`.
     let llmCenterSignIn: LLMCenterSignInService?
     /// The account registry the launch pass reconciled. The UI observes it live: a rename
@@ -178,9 +177,8 @@ final class AppContainer {
             )
         }
 
-        // LLM Center's in-app sign-in, sharing the provider's auth store so the app and `llmctl` keep
-        // reading and writing one `config.json`. After a successful authorization the provider is
-        // force-refreshed so the card drops its expired-login error without waiting for the next cycle;
+        // LLMCenter's in-app sign-in, sharing the provider's auth store so both read and write one
+        // `config.json`. After a successful authorization the provider is force-refreshed so the card drops its expired-login error without waiting for the next cycle;
         // the failure backoff has to be cleared first, because `force` only bypasses the check for THIS
         // call and the following periodic pass would otherwise still be swallowed.
         let llmCenterSignIn = providers.compactMap { $0 as? LLMCenterProvider }.first.map { llmCenter in
@@ -237,7 +235,7 @@ final class AppContainer {
         )
         dataStore.onRefreshOutcome = { [weak telemetry, weak llmCenterSignIn] providerID, outcome, category, manual in
             telemetry?.record(providerID: providerID, outcome: outcome, category: category, manual: manual)
-            // The green channel's automatic half: an expired LLM Center login is the one failure the app
+            // The green channel's automatic half: an expired LLMCenter login is the one failure the app
             // can fix by itself. Every gate (setting off, already in flight, once-per-session, wait for
             // the first refresh pass) lives inside the service.
             if providerID == "llmcenter", outcome == .failed, category == .authExpired {

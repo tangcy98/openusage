@@ -1,9 +1,9 @@
 import XCTest
 @testable import OpenUsage
 
-/// The in-app LLM Center sign-in flow: browser hand-off, polling, and writing the new token back into
-/// `llmctl`'s own config. Every seam (clock, sleep, state nonce, browser open) is injected, so these run
-/// synchronously and deterministically without AppKit or real waiting.
+/// The in-app LLMCenter sign-in flow: browser hand-off, polling, and writing the new token back to
+/// disk. Every seam (clock, sleep, state nonce, browser open) is injected, so these run synchronously
+/// and deterministically without AppKit or real waiting.
 @MainActor
 final class LLMCenterSignInServiceTests: XCTestCase {
     private let configPath = "/tmp/fake/llmctl/config.json"
@@ -17,18 +17,33 @@ final class LLMCenterSignInServiceTests: XCTestCase {
     }
 
     /// Answers the session POST once, then walks the given poll responses in order (repeating the last).
-    private static func http(polls: [String]) -> RoutingHTTPClient {
+    private static func http(polls: [String], recordingInto hosts: RequestedHosts? = nil) -> RoutingHTTPClient {
         let session = """
         {"code":0,"data":{"state":"deadbeef","authorizeUrl":"https://portal.example.test/cli-auth?state=deadbeef",\
         "expiresIn":300,"pollIntervalMs":1000}}
         """
         let counter = Counter()
         return RoutingHTTPClient { request in
+            hosts?.record(request.url.absoluteString)
             if request.url.path.hasSuffix("/session") {
                 return HTTPResponse(statusCode: 200, headers: [:], body: Data(session.utf8))
             }
             let index = min(counter.next(), polls.count - 1)
             return HTTPResponse(statusCode: 200, headers: [:], body: Data(polls[index].utf8))
+        }
+    }
+
+    /// Records every URL the client actually called, so a test can assert which deployment was reached.
+    private final class RequestedHosts: @unchecked Sendable {
+        private var value: [String] = []
+        private let lock = NSLock()
+        func record(_ url: String) {
+            lock.lock(); defer { lock.unlock() }
+            value.append(url)
+        }
+        var all: [String] {
+            lock.lock(); defer { lock.unlock() }
+            return value
         }
     }
 
@@ -134,7 +149,7 @@ final class LLMCenterSignInServiceTests: XCTestCase {
     }
 
     func testConfigWritePreservesUnknownKeys() async throws {
-        // The CLI owns this file. Losing `access_key`/`model`/`env` would break `llmctl` itself.
+        // The `llmctl` CLI shares this file. Losing `access_key`/`model`/`env` would break it.
         let original = """
         {"access_key":"ak-1","api":"https://api.example.test","app_code":"old-app","env":"prod",\
         "model":"gpt-x","web_token":"expired"}
@@ -202,17 +217,31 @@ final class LLMCenterSignInServiceTests: XCTestCase {
         XCTAssertEqual(files.files[configPath], before)
     }
 
-    func testMissingAPIBaseURLFailsWithoutOpeningABrowser() async throws {
-        // Never-logged-in machine: no host on record, so there is nothing to authorize against. The CLI
-        // has to run once first — the app deliberately does not guess a hostname.
-        let (store, _) = makeStore("{}")
+    func testSignsInAgainstTheBuiltInHostWhenNothingOnDiskNamesAServer() async throws {
+        // Never-signed-in machine: no host on record. The flow falls back to the live host rather than
+        // dead-ending, which is what makes the first sign-in possible without any external setup.
+        let (store, files) = makeStore("{}")
         let opened = OpenedURLs()
-        let service = makeService(store: store, http: Self.http(polls: [Self.authorized()]), openedURLs: opened)
+        let requested = RequestedHosts()
+        let service = makeService(
+            store: store,
+            http: Self.http(polls: [Self.authorized()], recordingInto: requested),
+            openedURLs: opened
+        )
 
         await runToCompletion(service)
 
-        XCTAssertEqual(service.phase, .failed(LLMCenterSignInError.apiBaseURLUnknown.localizedDescription))
-        XCTAssertTrue(opened.all.isEmpty)
+        XCTAssertEqual(service.phase, .succeeded)
+        XCTAssertEqual(opened.all.count, 1)
+        XCTAssertTrue(
+            requested.all.allSatisfy { $0.hasPrefix(LLMCenterHost.live) },
+            "the built-in live host must be what gets called, got \(requested.all)"
+        )
+        let saved = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(XCTUnwrap(files.files[configPath]).utf8)) as? [String: Any]
+        )
+        XCTAssertEqual(saved["web_token"] as? String, "tok-new")
+        XCTAssertEqual(saved["api"] as? String, LLMCenterHost.live, "the host it signed in against is recorded")
     }
 
     // MARK: - Gating

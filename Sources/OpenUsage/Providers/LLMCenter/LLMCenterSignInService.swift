@@ -2,11 +2,9 @@ import Foundation
 import Security
 import SwiftUI
 
-/// Runs the LLM Center CLI authorization from inside the app, so an expired token can be replaced without
-/// dropping to a terminal. `llmctl auth login` cannot do this: it treats any non-empty `web_token` in
-/// `config.json` as "already signed in" and returns without contacting the server, so an expired token
-/// makes the CLI a dead end. The protocol is the same one the CLI uses — see
-/// docs/research/llm-center-api.md.
+/// Runs the LLMCenter CLI authorization from inside the app, so signing in — first time or after an
+/// expiry — never requires dropping to a terminal. The protocol needs no existing credential at all;
+/// see docs/research/llm-center-api.md.
 ///
 /// This object is the single in-flight gate for both entry points (the card's button and the automatic
 /// mode), which is why the phase lives here rather than as view state: two browser windows for one login
@@ -125,7 +123,7 @@ final class LLMCenterSignInService {
     private func run() async {
         defer { pollTask = nil }
         do {
-            let api = try await resolveAPIBaseURL()
+            let api = try await loadOffMainActor { [authStore] in try authStore.loadAPIBaseURL() }
             let state = try makeState()
             let session = try await client.createSession(api: api, state: state)
             guard !Task.isCancelled else { return }
@@ -143,7 +141,7 @@ final class LLMCenterSignInService {
             try await loadOffMainActor { [authStore] in
                 try authStore.save(webToken: token.webToken, appCode: token.appCode, api: api)
             }
-            AppLog.info(LogTag.auth("llmcenter"), "sign-in complete; saved a new token to the llmctl config")
+            AppLog.info(LogTag.auth("llmcenter"), "sign-in complete; saved a new token to the config file")
 
             await refreshAfterSignIn()
             guard !Task.isCancelled else { return }
@@ -154,16 +152,6 @@ final class LLMCenterSignInService {
             AppLog.error(LogTag.auth("llmcenter"), "sign-in failed: \(error.localizedDescription)")
             phase = .failed(error.localizedDescription)
         }
-    }
-
-    private func resolveAPIBaseURL() async throws -> String {
-        let api = try await loadOffMainActor { [authStore] in try authStore.loadAPIBaseURL() }
-        guard let api else {
-            // Nothing on disk names a server, so there is nothing to authorize against. This is the
-            // never-logged-in case, not an expiry — the CLI has to run once to record the host.
-            throw LLMCenterSignInError.apiBaseURLUnknown
-        }
-        return api
     }
 
     /// Polls until the server hands back a token, the user is refused, or the session expires. Transient

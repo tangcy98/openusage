@@ -3,9 +3,9 @@ import XCTest
 
 // MARK: - LLMCenterAuthClientTests
 
-/// The CLI-auth protocol OpenUsage reproduces so an expired LLM Center token can be replaced without a
-/// terminal. See docs/research/llm-center-api.md — the shapes asserted here were captured from the real
-/// `llmctl` client, and a couple of them (GET-not-POST on poll, token-not-status as the success signal)
+/// LLMCenter's browser-authorization protocol, which OpenUsage drives itself so signing in never needs
+/// a terminal. See docs/research/llm-center-api.md — the shapes asserted here were captured from real
+/// authorizations, and a couple of them (GET-not-POST on poll, token-not-status as the success signal)
 /// are the kind of detail that silently breaks the flow if it regresses.
 final class LLMCenterAuthClientTests: XCTestCase {
     private let api = "https://api.example.test"

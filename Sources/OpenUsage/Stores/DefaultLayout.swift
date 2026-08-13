@@ -68,7 +68,7 @@ enum DefaultLayout {
         "copilot.premium",
         "openrouter.credits",
         "zai.session", "zai.weekly",
-        // Both LLM Center spend rows: the strip stacks a provider's two stars, so Today sits above This
+        // Both LLMCenter spend rows: the strip stacks a provider's two stars, so Today sits above This
         // Month — the pair the user watches together.
         "llmcenter.today", "llmcenter.month"
     ]
@@ -125,7 +125,7 @@ enum DefaultLayout {
         "openrouter.today", "openrouter.week", "openrouter.month", "openrouter.keyLimit",
         // Z.ai: Session meter stays above the fold; Web Searches (monthly count) sits below the caret.
         "zai.webSearches",
-        // LLM Center: Today and This Month stay above the fold (the spend rows the user asked to show);
+        // LLMCenter: Today and This Month stay above the fold (the spend rows the user asked to show);
         // Yesterday and the Usage Trend chart sit below the caret.
         "llmcenter.yesterday", "llmcenter.trend"
     ]

@@ -9,21 +9,18 @@ enum LLMCenterUsageError: Error, LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .connectionFailed:
-            return "Couldn't reach LLM Center. Check your connection."
+            return "Couldn't reach LLMCenter. Check your connection."
         case .invalidResponse:
-            return "LLM Center usage data unavailable. Try again later."
+            return "LLMCenter usage data unavailable. Try again later."
         case .invalidToken:
-            // Deliberately NOT "run `llmctl auth login`": that command short-circuits on any non-empty
-            // `web_token` without validating it, so it cannot replace an expired one. The card's Sign In
-            // button is the way out.
-            return "LLM Center login expired. Click Sign In on the LLM Center card."
+            return "LLMCenter login expired. Click Sign In on the LLMCenter card."
         case .requestFailed(let status):
-            return "LLM Center request failed (HTTP \(status))."
+            return "LLMCenter request failed (HTTP \(status))."
         }
     }
 }
 
-/// Calls the same endpoints the LLM Center web app uses, so every figure is the platform's own
+/// Calls the same endpoints the LLMCenter web app uses, so every figure is the platform's own
 /// accounting — no local summation or pricing. The personal scope (`scope: "PERSONAL"`, `freeUser: 1`)
 /// is what the site's 个人额度 view sends.
 struct LLMCenterUsageClient: Sendable {

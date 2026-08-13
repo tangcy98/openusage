@@ -10,10 +10,20 @@ import Foundation
 /// 2. **Asynchronously** probe every provider's `hasLocalCredentials()` (local files/keychain only, no
 ///    network) and replace the fallback with exactly the detected set — unless nothing was detected
 ///    (keep the fallback) or the user already touched the toggles while the probe ran (their choice wins).
+///
+/// `alwaysSeededProviderIDs` is exempt from step 2's replacement: those providers are on after seeding
+/// whatever the probe found.
 @MainActor
 enum FirstRunSeeder {
     /// The established providers (see AGENTS.md "## Providers"), shown when detection finds nothing.
     static let fallbackProviderIDs: Set<String> = ["claude", "codex", "cursor"]
+
+    /// Seeded on regardless of what the credential probe finds. LLMCenter is the reason this fork's
+    /// build exists, and its credentials are created *by* the card's own Sign In button — so gating the
+    /// card on an existing `config.json` hides the only thing that would produce one, and a colleague
+    /// who has never signed in sees no LLMCenter at all. Forced on at seed time only: turning it off
+    /// afterwards is persisted in the enabled list, and nothing here runs again on later launches.
+    static let alwaysSeededProviderIDs: Set<String> = ["llmcenter"]
 
     /// Returns the detection task (for tests to await), or `nil` when no seeding happened. The
     /// `enabledIDs == nil` guard makes seeding idempotent: an already-seeded store (e.g. an unbundled
@@ -62,14 +72,18 @@ enum FirstRunSeeder {
         logPrefix: String,
         probeVerb: String = "probing"
     ) -> Task<Void, Never> {
-        let fallback = fallbackProviderIDs.intersection(Set(providers.map(\.provider.id)))
+        let registryIDs = Set(providers.map(\.provider.id))
+        // `alwaysSeededProviderIDs` rides along with the fallback *and* survives the swap to the
+        // detected set, so a probe that finds nothing on a never-signed-in machine can't drop it.
+        let forced = alwaysSeededProviderIDs.intersection(registryIDs)
+        let fallback = fallbackProviderIDs.intersection(registryIDs).union(forced)
         enablement.seedEnabledProviders(fallback)
         AppLog.info(.config, "\(logPrefix): seeded providers \(fallback.sorted()); \(probeVerb) local credentials")
         return Task {
             let detected = await detectLocalProviders(providers)
             AppLog.info(.config, "\(logPrefix): detected credentials for \(detected.sorted())")
             guard enablement.enabledIDs == fallback, !detected.isEmpty else { return }
-            enablement.seedEnabledProviders(detected)
+            enablement.seedEnabledProviders(detected.union(forced))
         }
     }
 

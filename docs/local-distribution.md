@@ -1,7 +1,7 @@
 # Local Distribution (Un-notarized Builds)
 
 How to package this fork of OpenUsage into a DMG you can hand to colleagues, and what a recipient needs
-on their Mac for the **LLM Center** quota rows to show real numbers.
+on their Mac for the **LLMCenter** quota rows to show real numbers.
 
 This path exists because the fork carries an in-house provider and is built without an Apple Developer
 Program membership. It is not how the public OpenUsage releases are made — those are Developer
@@ -51,31 +51,25 @@ works reliably for ad-hoc builds; the `xattr` command is the dependable route. A
 
 Requires macOS 15 or later.
 
-## What a recipient needs for LLM Center to show their quota
+## What a recipient needs for LLMCenter to show their quota
 
 The app reads each person's own credentials off their own Mac — nothing is baked into the DMG, and the
-build carries no account of yours. For the LLM Center rows to populate, a recipient needs all three:
+build carries no account of yours. For the LLMCenter rows to populate, a recipient needs all three:
 
-1. **The `llmctl` CLI, logged in.**
+1. **A signed-in LLMCenter login.** They click **Sign In to LLMCenter** on the card and confirm in
+   the browser. No CLI, no setup — the app saves the token to
+   `~/Library/Application Support/llmctl/config.json` itself and refreshes. Until then the provider
+   reports *"Not signed in to LLMCenter"* and offers the button.
 
-   ```bash
-   llmctl auth login
-   ```
-
-   This writes `~/Library/Application Support/llmctl/config.json` containing the API base URL and their
-   personal token. OpenUsage reads that file directly and never invokes `llmctl`, so it picks up a
-   fresh or rotated login on the next refresh. Without this file the provider reports
-   *"Not logged in to LLM Center"*.
-
-2. **Network reachability to the LLM Center API host** — whatever `api` says in that same
+2. **Network reachability to the LLMCenter API host** — whatever `api` says in that same
    `config.json`. It's on the internal network, so they need to be on the office network or VPN.
    Off-network, the rows show a connection error rather than stale numbers. That host does change
-   occasionally, and `llmctl` never revises the one it recorded: OpenUsage redirects the hosts it knows
-   are retired (`llm-center.modelbest.cn` and the `…ali.modelbest.*` pair) to the live one on its own.
-   If *every* metric still reports HTTP 404 or 418, the recorded `api` is a host OpenUsage has never
-   seen and needs pointing at the current one — the token stays valid.
+   occasionally, and a saved login keeps pointing at the address it was made against: OpenUsage
+   redirects the hosts it knows are retired (`llm-center.modelbest.cn` and the `…ali.modelbest.*` pair)
+   to the live one on its own. If *every* metric still reports HTTP 404 or 418, the recorded `api` is a
+   host OpenUsage has never seen and needs pointing at the current one — the token stays valid.
 
-3. **An LLM Center account with a department membership and a monthly quota.** The quota meter comes
+3. **An LLMCenter account with a department membership and a monthly quota.** The quota meter comes
    from their own row in the department member list. An account not attached to a department has no
    quota to display.
 
@@ -92,7 +86,7 @@ API=$(python3 -c 'import json,os;print(json.load(open(os.path.expanduser("~/Libr
 curl -sS -o /dev/null -w '%{http_code}\n' "$API"
 ```
 
-Then open OpenUsage and hit Refresh. See [LLM Center](providers/llmcenter.md) for the metric-by-metric
+Then open OpenUsage and hit Refresh. See [LLMCenter](providers/llmcenter.md) for the metric-by-metric
 detail and its troubleshooting list.
 
 ## Other providers

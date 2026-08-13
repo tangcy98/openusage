@@ -1,6 +1,6 @@
-# OpenUsage 使用指南（查看 LLM Center 个人额度）
+# OpenUsage 使用指南（查看 LLMCenter 个人额度）
 
-OpenUsage 是一个 macOS 菜单栏小工具，可以直接在菜单栏上看到你的 LLM Center（面壁智能）个人额度用了多少、还剩多少。
+OpenUsage 是一个 macOS 菜单栏小工具，可以直接在菜单栏上看到你的 LLMCenter（面壁智能）个人额度用了多少、还剩多少。
 
 **运行环境要求：macOS 15 或更高版本。**
 
@@ -24,26 +24,22 @@ OpenUsage 是一个 macOS 菜单栏小工具，可以直接在菜单栏上看到
 
 ---
 
-## 二、登录 LLM Center
+## 二、登录 LLMCenter
 
-OpenUsage 读取的是你自己电脑上的登录信息，DMG 里**不包含任何人的账号**。所以要先用 `llmctl` 登录一次：
+OpenUsage 读取的是你自己电脑上的登录信息，DMG 里**不包含任何人的账号**。首次使用时，LLMCenter 卡片会直接出现（不需要事先登录过），上面有 **Sign In to LLMCenter** 按钮——点一下，浏览器里确认授权即可，**不需要装任何命令行工具**。
 
-```bash
-llmctl auth login
-```
+授权成功后，登录信息写入本机的 `~/Library/Application Support/llmctl/config.json`，之后 token 过期也是同一个按钮，点一下就能续上。
 
-登录会在本机写入 `~/Library/Application Support/llmctl/config.json`。OpenUsage 直接读这个文件（不会去调用 `llmctl`），所以之后换号或 token 轮换，下次刷新就会自动生效。
+> 这个路径和 `llmctl` CLI 共用。如果你本来就在用它，两边共享同一份登录；OpenUsage 写入时不会动文件里属于它的其他字段（access key、model、env）。
 
-> LLM Center 换过域名，而 `llmctl` 不会更新它当初记下的地址。老配置里的 `llm-center.modelbest.cn`（外网入口，已关闭）和 `…ali.modelbest.*` 会被 OpenUsage 自动切到内网的 `llm-center.modelbest.co`，不需要你手动改配置文件。
-
-**首次登录必须用 CLI**，因为这一步同时把 API 地址写进了配置文件；OpenUsage 不会去猜这个地址。但**之后 token 过期不用再回终端**——卡片上会出现 **Sign In to LLM Center** 按钮，点一下就在浏览器里完成授权、写回同一个配置文件。（重新执行 `llmctl auth login` 对过期的 token 无效：它只检查本地字段非空，不会向服务端验证。）
+> LLMCenter 换过域名。老配置里的 `llm-center.modelbest.cn`（外网入口，已关闭）和 `…ali.modelbest.*` 会被 OpenUsage 自动切到内网的 `llm-center.modelbest.co`，不需要你手动改配置文件。
 
 **还需要满足：**
 
-- **能访问 LLM Center 内网**——需要连公司网络或 VPN。断网时会显示连接错误，而不是旧数据。
+- **能访问 LLMCenter 内网**——需要连公司网络或 VPN。断网时会显示连接错误，而不是旧数据。
 - **账号已加入部门并有月度额度**——额度数字取自你在部门成员列表里的那一行。没有归属部门的账号没有额度可显示。
 
-登录完成后，打开 OpenUsage 点一下 **Refresh** 即可。
+登录完成后卡片会自动刷新，不用手动点 **Refresh**。
 
 ---
 
@@ -56,7 +52,7 @@ llmctl auth login
 ¥3.2K / ¥7K      ← 本月消耗 / 本月额度
 ```
 
-点开菜单栏图标，LLM Center 卡片（默认排在最上方）包含：
+点开菜单栏图标，LLMCenter 卡片（默认排在最上方）包含：
 
 | 行 | 含义 |
 |---|---|
@@ -79,7 +75,7 @@ llmctl auth login
 
 这个 App 同时支持 Claude、Codex、Cursor 等。它会自动检测你电脑上**已有的**登录，检测到哪个就显示哪个——你没用过的服务不会出现。不需要额外配置。
 
-顶部的 **Total Spend** 圆环图汇总各家花费。LLM Center 的人民币金额会按当前汇率折算成美元后计入，所以它的那一份会标注为估算值。
+顶部的 **Total Spend** 圆环图汇总各家花费。LLMCenter 的人民币金额会按当前汇率折算成美元后计入，所以它的那一份会标注为估算值。
 
 ---
 
@@ -88,8 +84,8 @@ llmctl auth login
 | 提示 | 怎么办 |
 |---|---|
 | **"OpenUsage 已损坏"** | 没执行安装第 2 步的 `xattr` 命令 |
-| **"Not logged in to LLM Center"** | 执行 `llmctl auth login`，然后刷新 |
-| **"LLM Center login expired"** | 点卡片上的 **Sign In to LLM Center**，在浏览器里确认即可（重跑 `llmctl auth login` 没用） |
+| **"Not signed in to LLMCenter"** | 点卡片上的 **Sign In to LLMCenter**，在浏览器里确认即可 |
+| **"LLMCenter login expired"** | 同上，点 **Sign In to LLMCenter** 重新授权 |
 | **每个指标都报 HTTP 404 / 418** | 配置文件里的 `api` 地址已失效。已知的旧地址（`llm-center.modelbest.cn`、`…ali.modelbest.*`）App 会自动切到可用地址；若仍报错说明是个没见过的地址，手动改成可访问的即可，token 不用换 |
 | **连接错误 / 数字不更新** | 检查是否连着公司网络或 VPN |
 | **有额度但显示不出来** | 确认账号已归属部门且分配了月度额度 |
@@ -112,5 +108,5 @@ curl -sS -o /dev/null -w '%{http_code}\n' "$API"
 
 - **不会自动更新。** 这个版本包含公开版没有的内网 provider，因此刻意关闭了自动更新——有新版本会直接发新的 DMG 给你。
 - **不支持 iCloud 同步**（该功能需要付费开发者账号的配置文件）。其余功能均正常。
-- **数据不出本机。** 额度数字直接向 LLM Center 的接口查询，凭证只在你自己的电脑上读取。
+- **数据不出本机。** 额度数字直接向 LLMCenter 的接口查询，凭证只在你自己的电脑上读取。
 - **每个人看到的是自己的数据。** 同一个 DMG，不同人打开显示各自的额度。

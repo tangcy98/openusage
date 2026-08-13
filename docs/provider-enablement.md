@@ -6,6 +6,11 @@ How OpenUsage decides which providers start on, what happens when an update adds
 
 A fresh install doesn't turn on every provider OpenUsage knows about. It starts with Claude, Codex, and Cursor, then quickly checks which providers have credentials available on your Mac — an existing local login, saved API key, or supported environment variable; nothing is sent anywhere — and switches to exactly that set. All providers are checked at once, so detection takes as long as the slowest single check, not the sum of them. If nothing is found, the Claude/Codex/Cursor starter set stays. Providers the check turns on are fetched right away, so they appear with data instead of waiting for the next scheduled refresh. See [Dashboard § First launch](dashboard.md#first-launch) for how the dashboard presents this.
 
+**LLMCenter is the exception**: it starts on regardless of what the check finds. You get its credentials
+by clicking **Sign In to LLMCenter** on its own card, so requiring credentials first would hide the very
+button that creates them. It's forced on only at that first seeding — turn it off in **Customize** and it
+stays off on every later launch, like any other provider.
+
 ## When an update adds a new provider
 
 The same detection runs for providers that arrive later. On the first launch after an update, OpenUsage compares the providers it now ships with the ones this install has seen before. For each brand-new one, it runs the same local-only credential check:

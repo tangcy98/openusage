@@ -1,6 +1,6 @@
-# LLM Center
+# LLMCenter
 
-Tracks [LLM Center](https://llm-center.modelbest.co) (ModelBest) usage from the platform's own
+Tracks [LLMCenter](https://llm-center.modelbest.co) (ModelBest) usage from the platform's own
 accounting: the monthly member quota, today's spend against a soft daily quota, and yesterday's spend.
 Hover any spend row for the official per-model breakdown.
 
@@ -20,7 +20,7 @@ shows the amount ("¥150 / ¥1K") or the share of the quota ("15%"), and whether
 remaining, follow the global **Menu Bar Values** and **Show Usage As** settings — see
 [Menu Bar](../menu-bar.md).
 
-LLM Center sits first on the dashboard by default. Its Today and Yesterday spend also feeds the
+LLMCenter sits first on the dashboard by default. Its Today and Yesterday spend also feeds the
 cross-provider [Total Spend](../dashboard.md#total-spend) ring, converted from yuan to dollars at the
 current exchange rate — which is why its slice counts as an estimate there.
 
@@ -31,48 +31,42 @@ Today's soft daily quota, which is the monthly quota divided by the current mont
 
 ## Where credentials come from
 
-Log in with the `llmctl` CLI once:
+Click **Sign In to LLMCenter** on the card. OpenUsage opens LLMCenter's authorization page in your
+browser; confirm there and it saves the token to
+`~/Library/Application Support/llmctl/config.json`. Nothing else is needed — no CLI, no pasting a
+token, no editing files by hand.
 
-```bash
-llmctl auth login
-```
+That path is shared with the `llmctl` CLI, so if you happen to use it, both keep working off one
+login. Anything else in that file — your access key, model, and environment settings — is left
+untouched whenever OpenUsage writes it. A token rotated by any means is picked up on the next refresh.
 
-That writes `~/Library/Application Support/llmctl/config.json` with the API base URL and the
-Rosefinch bearer token. OpenUsage reads that file directly (it never calls out to `llmctl`), so the
-provider shows up on the dashboard automatically after login and a rotated token is picked up on the
-next refresh.
-
-LLM Center has retired hosts before, and `llmctl` never revises the one it recorded — so an old login
-would keep pointing at a dead address with no way to fix it but hand-editing JSON. OpenUsage redirects
-the hosts it knows are gone (`llm-center.modelbest.cn` and the `…ali.modelbest.*` pair) to the live
-`llm-center.modelbest.co`, and repairs the recorded value the next time it writes the file. A host it
-doesn't recognize is left exactly as written.
+LLMCenter has retired hosts before, and a saved login keeps pointing at the address it was made
+against. OpenUsage redirects the hosts it knows are gone (`llm-center.modelbest.cn` and the
+`…ali.modelbest.*` pair) to the live `llm-center.modelbest.co`, and repairs the recorded value the next
+time it writes the file. A host it doesn't recognize is left exactly as written.
 
 ## Signing in from the app
 
-When the saved token expires, the LLM Center card grows a **Sign In to LLM Center** button. Click it and
-OpenUsage opens the same authorization page the CLI uses; confirm in the browser and the app writes the
-new token back into `config.json`, so `llmctl` and OpenUsage keep sharing one login. Everything else in
-that file — your access key, model, and environment settings — is left untouched.
+The **Sign In to LLMCenter** button appears on the card whenever there's no usable login — the first
+time you use the provider, and again if the saved token expires. Click it, confirm in the browser, and
+the card reloads on its own.
 
-This exists because `llmctl auth login` cannot recover from an expired token: it treats any non-empty
-`web_token` as "already signed in" and returns without ever asking the server, so re-running it does
-nothing. The button is the way back in.
+The card is on from the first launch even though you haven't signed in yet — that's deliberate, since
+the button is how you sign in. Turn the provider off in Customize and it stays off. See
+[Which Providers Are On](../provider-enablement.md).
 
-Two limits worth knowing:
-
-- **The first login still needs the CLI.** `llmctl auth login` is what records the API host in
-  `config.json`, and OpenUsage will not guess one. On a machine that has never logged in, the card says
-  so instead of offering the button.
-- **Sign-in happens on click by default.** Turn on **Auto Sign In to LLM Center** in Settings → General
-  and OpenUsage opens the browser by itself the first time it finds the login expired — at most once per
-  launch, so a dead session can't throw a window at you every refresh. It also skips the very first
-  refresh after launch, so a login that's already expired when you start the app opens the browser one
-  refresh cycle later rather than the instant you log in.
+Sign-in happens on click by default. Turn on **Auto Sign In to LLMCenter** in Settings → General and
+OpenUsage opens the browser by itself the first time it finds the login expired — at most once per
+launch, so a dead session can't throw a window at you every refresh. It also skips the very first
+refresh after launch, so a login that's already expired when you start the app opens the browser one
+refresh cycle later rather than the instant you log in.
 
 The API host is on the internal network, so a refresh needs the office network or VPN. Handing this
 build to a colleague? See [Local distribution](../local-distribution.md) for the full list of what they
 need on their Mac.
+
+LLMCenter is excluded from **Share Anonymous Usage** entirely — the provider id, its metrics, and its
+refresh counts are never sent, whatever that setting says. See [Privacy](../privacy.md).
 
 ## Under the hood
 
@@ -84,19 +78,19 @@ need on their Mac.
   cost/tokens for Today and Yesterday.
 - `POST {api}/llm/api/usage/user-model-details` — the per-model cost rows behind the hover breakdown
   on Today, This Month, and Yesterday, and the month-to-date Usage Trend chart.
-- `POST {api}/llm/api/cli/auth/session` and `GET {api}/llm/api/cli/auth/poll?state=…` — the CLI
-  authorization the in-app Sign In button drives. Neither needs an existing credential, which is what
-  makes them a recovery path. See [the protocol notes](../research/llm-center-api.md).
+- `POST {api}/llm/api/cli/auth/session` and `GET {api}/llm/api/cli/auth/poll?state=…` — the browser
+  authorization the Sign In button drives. Neither needs an existing credential, which is what lets it
+  serve as both the first sign-in and the recovery path. See
+  [the protocol notes](../research/llm-center-api.md).
 
 ## Troubleshooting
 
-- **"Not logged in to LLM Center"** — run `llmctl auth login` to sign in, then refresh.
-- **"LLM Center login expired"** — the saved token was rejected (401/403). Click **Sign In to LLM
-  Center** on the card. Re-running `llmctl auth login` will not help: it stops at the non-empty token
-  already on disk without checking it with the server.
+- **"Not signed in to LLMCenter"** — click **Sign In to LLMCenter** on the card.
+- **"LLMCenter login expired"** — the saved token was rejected (401/403). Click **Sign In to LLM
+  Center** on the card.
 - **HTTP 404 or 418 on every metric** — the API host in `config.json` is no longer serving. OpenUsage
   already redirects the hosts it knows are retired (`llm-center.modelbest.cn`, the `…ali.modelbest.*`
   pair) to the live one, so this only appears for a host it has never seen. Point `api` at a reachable
-  LLM Center deployment and refresh; the token itself is unaffected.
-- **Costs show `¥`** — LLM Center bills in CNY (人民币). OpenUsage renders yuan-denominated rows with
+  LLMCenter deployment and refresh; the token itself is unaffected.
+- **Costs show `¥`** — LLMCenter bills in CNY (人民币). OpenUsage renders yuan-denominated rows with
   `¥`; USD providers keep `$`.

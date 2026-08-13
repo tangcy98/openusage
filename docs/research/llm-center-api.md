@@ -1,4 +1,4 @@
-# LLM Center（llm-center.modelbest.co）API 参考
+# LLMCenter（llm-center.modelbest.co）API 参考
 
 > 面向 agent 的协议参考：访问、鉴权、接口、坑位。内容来自 2026-08-05 对真实账号的实测逆向
 > （`llmctl` CLI 行为、官网 SPA JS 反查、curl 直连探测），并已落地为 OpenUsage 的
@@ -197,13 +197,16 @@ Auto Sign In 启动时，第一轮必然命中「no refresh pass has completed y
 
 ## OpenUsage 集成现状
 
-- Provider：id `llmcenter`，显示名 "LLM Center"，图标 `llmcenter.svg`（官方 logo）。
+- Provider：id `llmcenter`，显示名 "LLMCenter"，图标 `llmcenter.svg`（官方 logo）。
 - 指标：Today / This Month（自然月）/ Yesterday / Usage Trend（月内每日 tokens），全部 ¥。
-- 凭证：读 `~/Library/Application Support/llmctl/config.json`，无手动输入；`hasLocalCredentials()`
-  探该文件，首次启动自动启用。
-- 应用内登录：token 过期（`ErrorCategory.authExpired`）时卡片出现 Sign In 行，走上面的 CLI 授权协议
-  拿新 token 写回同一个 `config.json`。默认手动点击；Settings → General 的 **Auto Sign In to LLM
-  Center** 打开后每个 app 会话自动弹一次。首次登录仍需 `llmctl auth login`（它提供 `api` 地址）。
+- 凭证：读写 `~/Library/Application Support/llmctl/config.json`，无手动输入；`hasLocalCredentials()`
+  探该文件，首次启动自动启用。该路径与 `llmctl` 共用，但 OpenUsage 不依赖它——写入时保留文件里
+  不属于自己的键。
+- 应用内登录：没有可用登录时（`ErrorCategory.notLoggedIn` 或 `authExpired`）卡片出现 Sign In 行，
+  走上面的 CLI 授权协议拿 token 写回同一个文件。**首次登录同样走这条路，不需要 `llmctl`**：
+  `config.json` 缺 `api` 时回退到 `LLMCenterHost.live`（授权协议三步都不需要既有凭据）。
+  默认手动点击；Settings → General 的 **Auto Sign In to LLMCenter** 打开后每个 app 会话自动弹一次
+  （仅限 `authExpired`）。
 - 实现：`Sources/OpenUsage/Providers/LLMCenter/`（AuthStore / AuthClient / Host / SignInService /
   UsageClient / UsageMapper / Provider）。
 - 文档：`docs/providers/llmcenter.md`（用户向）。

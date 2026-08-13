@@ -1,6 +1,6 @@
 import Foundation
 
-/// Builds the provider's rows exclusively from official LLM Center responses: the member-quota API
+/// Builds the provider's rows exclusively from official LLMCenter responses: the member-quota API
 /// for the monthly meter and the usage-statistics API for the per-day figures. Nothing is summed from
 /// per-call records; the only derived number is the Today soft daily quota, which the user asked for
 /// explicitly (monthly quota ÷ days in the current month).
@@ -77,7 +77,7 @@ enum LLMCenterUsageMapper {
             totalTokens: totalTokens,
             totalCostUSD: totalCost,
             models: entries,
-            sourceNote: "From the LLM Center usage API.",
+            sourceNote: "From the LLMCenter usage API.",
             costKind: .yuan
         )
     }
@@ -89,7 +89,7 @@ enum LLMCenterUsageMapper {
     /// The Usage Trend row: one bar per calendar day of the current month, value = that day's spend in
     /// ¥ (the per-model detail rows summed per day). Days with no usage are zero-filled so the
     /// sparkline stays calendar-true, and the whole line is skipped when the month is idle — a flat row
-    /// of zero bars would read as data. Spend rather than tokens: LLM Center's rows are billed in ¥ and
+    /// of zero bars would read as data. Spend rather than tokens: LLMCenter's rows are billed in ¥ and
     /// every other row on this provider reads in ¥, so the trend follows the same unit.
     static func trendLine(rows: [[String: Any]], now: Date, calendar: Calendar = .current) -> MetricLine? {
         var costByDay: [String: Double] = [:]
@@ -115,6 +115,6 @@ enum LLMCenterUsageMapper {
             )
         }
         guard !points.isEmpty else { return nil }
-        return .chart(label: "Usage Trend", points: points, note: "From the LLM Center usage API.")
+        return .chart(label: "Usage Trend", points: points, note: "From the LLMCenter usage API.")
     }
 }

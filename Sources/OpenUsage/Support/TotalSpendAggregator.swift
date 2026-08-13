@@ -173,7 +173,7 @@ struct TotalSpend: Equatable {
 /// *and* that line has money and/or tokens — idle periods (no line) are excluded, never zero.
 ///
 /// Both line shapes count: the usual `.values` spend row, and a `.progress` quota meter carrying the
-/// period's spend (LLM Center's Today / This Month meters). A meter's "used" side is the same spend
+/// period's spend (LLMCenter's Today / This Month meters). A meter's "used" side is the same spend
 /// figure a values row reports, so excluding it would drop a real contributor from the ring.
 enum TotalSpendAggregator {
     /// The total for one period across `providers` (pass them in display order; ties keep it).

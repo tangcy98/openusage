@@ -1,16 +1,19 @@
 import Foundation
 
-/// Rewrites LLM Center API hosts that are known to be retired.
+/// The LLMCenter API host: the live default, plus rewrites for hosts known to be retired.
 ///
-/// The host lives in `llmctl`'s `config.json`, and the CLI never revises it: `llmctl auth login`
-/// short-circuits on any non-empty `web_token` without contacting the server, so a login recorded
-/// against a host that has since been shut down leaves the user with no way back except hand-editing
-/// JSON. Every metric fails, and the failure looks like a server problem rather than a stale address.
+/// A login records the host it was made against, and nothing revises it afterwards — so a config left
+/// over from a deployment that has since been shut down keeps every metric failing, and the failure
+/// looks like a server problem rather than a stale address.
 ///
-/// So this is a migration, not a fallback: only hosts confirmed dead are rewritten, to the one host
-/// confirmed live, and every rewrite is logged. An unrecognized host is passed through untouched —
+/// So the rewrite is a migration, not a fallback: only hosts confirmed dead are replaced, by the one
+/// host confirmed live, and every rewrite is logged. An unrecognized host is passed through untouched —
 /// a deployment we've never heard of is the user's business, not ours to redirect.
 enum LLMCenterHost {
+    /// Where sign-in goes when nothing on disk names a server — the first-run case. Confirmed live
+    /// (see `retiredHosts`), and the same host every retired one migrates to.
+    static let live = "https://llm-center.modelbest.co"
+
     /// Retired host → its replacement. Measured 2026-08-09:
     /// - `llm-center.modelbest.cn` — the public-internet entry point, now shut down; a Huawei Cloud
     ///   WAF answers every path with HTTP 418.

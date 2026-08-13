@@ -95,6 +95,56 @@ final class FirstRunSeederTests: XCTestCase {
         XCTAssertEqual(enablement.enabledIDs, ["claude", "cursor"])
     }
 
+    // MARK: - Always-seeded providers
+
+    /// LLMCenter has no credentials until the user signs in from its own card, so detection must not be
+    /// able to drop it — otherwise a never-signed-in machine shows no card and no Sign In button.
+    func testAlwaysSeededProviderSurvivesAnEmptyCredentialProbe() async {
+        let enablement = ProviderEnablementStore(defaults: makeDefaults("forced"))
+        let onboarding = OnboardingStore(defaults: makeDefaults("forced-onboarding"))
+        let providers = [
+            stub("claude", hasCredentials: true),
+            stub("codex", hasCredentials: false),
+            stub("cursor", hasCredentials: false),
+            stub("llmcenter", hasCredentials: false)
+        ]
+
+        let task = FirstRunSeeder.seedIfNeeded(
+            isFreshInstall: true, providers: providers,
+            enablement: enablement, onboarding: onboarding
+        )
+
+        XCTAssertEqual(enablement.enabledIDs, ["claude", "codex", "cursor", "llmcenter"])
+
+        await task?.value
+        XCTAssertEqual(enablement.enabledIDs, ["claude", "llmcenter"], "detection must not drop it")
+    }
+
+    /// Forced on at seed time only: switching it off is a real choice that later launches must respect.
+    func testTurningTheAlwaysSeededProviderOffSticks() async {
+        let defaults = makeDefaults("forced-off")
+        let enablement = ProviderEnablementStore(defaults: defaults)
+        let onboarding = OnboardingStore(defaults: makeDefaults("forced-off-onboarding"))
+        let providers = [stub("claude", hasCredentials: true), stub("llmcenter", hasCredentials: false)]
+
+        await FirstRunSeeder.seedIfNeeded(
+            isFreshInstall: true, providers: providers,
+            enablement: enablement, onboarding: onboarding
+        )?.value
+        enablement.setEnabled(false, for: "llmcenter")
+
+        // A later launch: seeding is a no-op on an already-seeded store, and the provider is known, so
+        // `NewProviderSeeder` never probes it either.
+        let relaunched = ProviderEnablementStore(defaults: defaults)
+        FirstRunSeeder.seedIfNeeded(
+            isFreshInstall: true, providers: providers,
+            enablement: relaunched, onboarding: onboarding
+        )
+        NewProviderSeeder.reconcileIfNeeded(providers: providers, enablement: relaunched)
+
+        XCTAssertFalse(relaunched.isEnabled("llmcenter"))
+    }
+
     // MARK: - Reset All reseed
 
     func testReseedOverwritesCurrentChoicesWithDetectedSet() async {

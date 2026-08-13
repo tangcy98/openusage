@@ -14,7 +14,7 @@ enum ProviderCatalog {
         claudeCards: [ClaudeAccountCard] = [],
         defaultClaudeExtraLogRoots: [URL] = []
     ) -> [ProviderRuntime] {
-        // Default provider order (see AGENTS.md "## Providers"): LLM Center first — this build's
+        // Default provider order (see AGENTS.md "## Providers"): LLMCenter first — this build's
         // primary relay, whose CNY quota is the number its users open the app for — then the three
         // established providers, then every other provider alphabetically by display name. Account
         // cards slot in right after their family's default card.

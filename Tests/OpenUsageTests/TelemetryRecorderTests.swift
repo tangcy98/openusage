@@ -33,6 +33,9 @@ final class TelemetryRecorderTests: XCTestCase {
         let store = makeStore("rollover")
         var clock = day(25)
         let recorder = TelemetryRecorder(sink: sink, store: store, snapshot: { self.snapshot }, now: { clock })
+        
+        // Enable telemetry (defaults to off in this fork).
+        store.enabled = true
 
         // Day 25: real fetches plus timer noise that must be ignored.
         recorder.record(providerID: "claude", outcome: .refreshed, category: nil, manual: false)
@@ -75,6 +78,9 @@ final class TelemetryRecorderTests: XCTestCase {
         let store = makeStore("daily-active")
         var clock = day(25)
         let recorder = TelemetryRecorder(sink: sink, store: store, snapshot: { self.snapshot }, now: { clock })
+        
+        // Enable telemetry (defaults to off in this fork).
+        store.enabled = true
 
         recorder.tick()
         recorder.tick() // same day → must not emit twice
@@ -97,6 +103,9 @@ final class TelemetryRecorderTests: XCTestCase {
         let store = makeStore("sweep")
         var clock = day(25)
         let recorder = TelemetryRecorder(sink: sink, store: store, snapshot: { self.snapshot }, now: { clock })
+        
+        // Enable telemetry (defaults to off in this fork).
+        store.enabled = true
 
         recorder.record(providerID: "grok", outcome: .refreshed, category: nil, manual: false)
 
@@ -116,6 +125,8 @@ final class TelemetryRecorderTests: XCTestCase {
         var clock = day(25)
         let recorder = TelemetryRecorder(sink: sink, store: store, snapshot: { self.snapshot }, now: { clock })
 
+        // Enable telemetry first (defaults to off in this fork), then opt out.
+        store.enabled = true
         recorder.setEnabled(false)
         XCTAssertEqual(sink.enabledCalls, [false])
 
@@ -127,6 +138,58 @@ final class TelemetryRecorderTests: XCTestCase {
 
         XCTAssertTrue(sink.events.isEmpty, "no events should be captured while opted out")
         XCTAssertFalse(store.enabled, "opt-out must persist")
+    }
+
+    // MARK: - Withheld providers
+
+    /// LLMCenter is an in-house provider carried only by this fork. Its id must never reach the
+    /// analytics host — not as a refresh rollup, and not inside the daily config snapshot.
+    func testWithheldProviderIsNeverReported() {
+        let sink = FakeSink()
+        let store = makeStore("withheld")
+        var clock = day(25)
+        let mixed = TelemetryConfigSnapshot(
+            enabledProviders: ["claude", "llmcenter"],
+            enabledMetricIDs: ["claude.session", "llmcenter.today"],
+            pinnedMetricIDs: ["llmcenter.month"],
+            expandedMetricIDs: ["llmcenter.yesterday", "claude.weekly"],
+            menuBarStyle: "text"
+        )
+        let recorder = TelemetryRecorder(sink: sink, store: store, snapshot: { mixed }, now: { clock })
+        
+        // Enable telemetry (defaults to off in this fork).
+        store.enabled = true
+
+        recorder.record(providerID: "llmcenter", outcome: .refreshed, category: nil, manual: true)
+        recorder.record(providerID: "llmcenter", outcome: .failed, category: .authExpired, manual: false)
+        recorder.record(providerID: "claude", outcome: .refreshed, category: nil, manual: false)
+        recorder.tick()
+        clock = day(26)
+        recorder.tick()
+
+        let rollups = sink.events(named: "provider_refresh_daily")
+        XCTAssertEqual(rollups.map { $0["provider_id"] as? String }, ["claude"])
+        let active = try? XCTUnwrap(sink.events(named: "app_daily_active").first)
+        XCTAssertEqual(active?["enabled_providers"] as? [String], ["claude"])
+        XCTAssertEqual(active?["enabled_metric_ids"] as? [String], ["claude.session"])
+        XCTAssertEqual(active?["pinned_metric_ids"] as? [String], [])
+        XCTAssertEqual(active?["expanded_metric_ids"] as? [String], ["claude.weekly"])
+    }
+
+    /// A counter left on disk by a build that predates the filter must be dropped, not emitted late.
+    func testWithheldProviderCounterPersistedByAnOlderBuildIsDiscarded() {
+        let sink = FakeSink()
+        let store = makeStore("withheld-stale")
+        store.setProviderCounters(["llmcenter": ProviderDailyCounter(day: "2026-06-25", success: 7)])
+        let recorder = TelemetryRecorder(sink: sink, store: store, snapshot: { self.snapshot }, now: { self.day(26) })
+        
+        // Enable telemetry (defaults to off in this fork).
+        store.enabled = true
+
+        recorder.tick()
+
+        XCTAssertTrue(sink.events(named: "provider_refresh_daily").isEmpty)
+        XCTAssertTrue(store.providerCounters().isEmpty, "the stale counter must still be cleared")
     }
 
     func testInstallIDIsStableAcrossStoreInstances() {

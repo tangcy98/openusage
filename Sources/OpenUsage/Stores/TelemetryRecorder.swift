@@ -18,6 +18,7 @@ struct TelemetryConfigSnapshot: Sendable {
 ///   when the day rolls over (so counts are complete and survive app restarts within a day).
 ///
 /// All work is skipped while telemetry is disabled, so opting out is a hard stop, not just a no-op sink.
+/// Independently of the toggle, providers in `withheldProviderIDs` are filtered out of both events.
 @MainActor
 final class TelemetryRecorder {
     private let sink: TelemetrySink
@@ -35,6 +36,22 @@ final class TelemetryRecorder {
         self.store = store
         self.snapshot = snapshot
         self.now = now
+    }
+
+    /// Providers whose very presence is withheld from analytics. LLMCenter is an in-house deployment
+    /// carried only by this fork: no usage value was ever sent for any provider, but the id alone would
+    /// tell a third-party analytics host that this machine talks to an internal ModelBest service. The
+    /// filter lives here rather than at the call sites so no future caller can leak it back in.
+    private static let withheldProviderIDs: Set<String> = ["llmcenter"]
+
+    static func isReportable(providerID: String) -> Bool { !withheldProviderIDs.contains(providerID) }
+
+    /// Metric ids are `<provider id>.<metric>`, so a withheld provider's rows drop with their provider.
+    static func reportableMetricIDs(_ ids: [String]) -> [String] {
+        ids.filter { id in
+            guard let providerID = id.split(separator: ".").first else { return true }
+            return isReportable(providerID: String(providerID))
+        }
     }
 
     var isEnabled: Bool { store.enabled }
@@ -64,6 +81,7 @@ final class TelemetryRecorder {
     /// backoffs are timer noise, not usage, and are dropped.
     func record(providerID: String, outcome: WidgetDataStore.RefreshOutcome, category: ErrorCategory?, manual: Bool) {
         guard store.enabled else { return }
+        guard Self.isReportable(providerID: providerID) else { return }
         guard outcome == .refreshed || outcome == .failed else { return }
 
         let today = Self.dayString(now())
@@ -113,16 +131,19 @@ final class TelemetryRecorder {
             "install_id": store.installID,
             "app_version": AppInfo.version,
             "os_version": ProcessInfo.processInfo.operatingSystemVersionString,
-            "enabled_providers": config.enabledProviders,
-            "enabled_metric_ids": config.enabledMetricIDs,
-            "pinned_metric_ids": config.pinnedMetricIDs,
-            "expanded_metric_ids": config.expandedMetricIDs,
+            "enabled_providers": config.enabledProviders.filter(Self.isReportable(providerID:)),
+            "enabled_metric_ids": Self.reportableMetricIDs(config.enabledMetricIDs),
+            "pinned_metric_ids": Self.reportableMetricIDs(config.pinnedMetricIDs),
+            "expanded_metric_ids": Self.reportableMetricIDs(config.expandedMetricIDs),
             "menu_bar_style": config.menuBarStyle
         ])
         sink.flush()
     }
 
+    /// Withheld providers drop their event here as well as at `record()`, so a counter persisted by an
+    /// earlier build is discarded rather than emitted — the caller clears it either way.
     private func emitProviderRollup(providerID: String, counter: ProviderDailyCounter) {
+        guard Self.isReportable(providerID: providerID) else { return }
         sink.capture("provider_refresh_daily", Self.providerRollupProperties(providerID: providerID, counter: counter))
         sink.flush()
     }

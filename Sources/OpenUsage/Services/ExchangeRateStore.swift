@@ -1,6 +1,6 @@
 import Foundation
 
-/// USD conversion rates for the non-USD currencies OpenUsage prices in — today only CNY (LLM Center).
+/// USD conversion rates for the non-USD currencies OpenUsage prices in — today only CNY (LLMCenter).
 ///
 /// The Total Spend ring sums every provider's spend into one figure, and that figure is denominated in
 /// dollars because every other provider bills in dollars. A CNY provider therefore needs a rate before

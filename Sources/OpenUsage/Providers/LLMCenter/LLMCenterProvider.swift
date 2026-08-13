@@ -4,7 +4,7 @@ import Foundation
 final class LLMCenterProvider: ProviderRuntime {
     let provider = Provider(
         id: "llmcenter",
-        displayName: "LLM Center",
+        displayName: "LLMCenter",
         icon: .providerMark("llmcenter"),
         links: [
             ProviderLink(label: "Usage", url: "https://llm-center.modelbest.co/usage")
@@ -43,7 +43,7 @@ final class LLMCenterProvider: ProviderRuntime {
     }
 
     func hasLocalCredentials() async -> Bool {
-        // Same source as `refresh()`: the `llmctl` login file. A broken file is a credential-access
+        // Same source as `refresh()`: the stored login file. A broken file is a credential-access
         // problem, not "no login" — but the probe stays boolean, so only the file's presence counts.
         await loadOffMainActor { [authStore] in
             guard let auth = try? authStore.loadAuth() else { return false }

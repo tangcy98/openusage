@@ -55,10 +55,10 @@ struct SettingsScreen: View {
                     Toggle("", isOn: $showTotalSpend)
                         .settingsSwitchStyle()
                 }
-                // LLM Center only, and only while it's enabled: no other provider needs the app to
+                // LLMCenter only, and only while it's enabled: no other provider needs the app to
                 // finish a login for it. Off by default — see LLMCenterAutoSignInSetting.
                 if container.enablement.isEnabled("llmcenter") {
-                    row("Auto Sign In to LLM Center") {
+                    row("Auto Sign In to LLMCenter") {
                         Toggle("", isOn: $llmCenterAutoSignIn)
                             .settingsSwitchStyle()
                     }

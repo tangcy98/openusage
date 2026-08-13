@@ -1,8 +1,8 @@
 import Foundation
 
-/// The LLM Center credential the `llmctl` CLI left on the machine: the API base URL plus the Rosefinch
-/// bearer token it uses for every request. OpenUsage reads this directly from disk — it never asks the
-/// user to paste a token and never calls out to `llmctl`.
+/// The LLMCenter credential stored on this machine: the API base URL plus the Rosefinch bearer token
+/// used on every request. OpenUsage reads and writes this file directly — it never asks the user to
+/// paste a token and never shells out to anything.
 struct LLMCenterAuth: Hashable, Sendable {
     var apiBaseURL: String
     var webToken: String
@@ -16,24 +16,24 @@ enum LLMCenterAuthError: Error, LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .notLoggedIn:
-            return "Not logged in to LLM Center. Run `llmctl auth login` to sign in, then refresh."
+            return "Not signed in to LLMCenter. Click Sign In on the LLMCenter card."
         case .credentialsUnreadable:
-            return "Couldn't read the LLM Center login. Check ~/Library/Application Support/llmctl/config.json, then refresh."
+            return "Couldn't read the LLMCenter login. Check ~/Library/Application Support/llmctl/config.json, then refresh."
         case .saveFailed:
-            return "Couldn't save the LLM Center login to disk. Check the file's permissions, then try again."
+            return "Couldn't save the LLMCenter login to disk. Check the file's permissions, then try again."
         }
     }
 }
 
-/// Reads `~/Library/Application Support/llmctl/config.json` — the file `llmctl auth login` writes on
-/// Darwin — which holds `{ "api": "<base URL>", "web_token": "<token>" }`. The presence and validity of
-/// the file is the first-run signal (`hasLocalCredentials`), and `refresh()` re-reads it so a rotated
-/// token is picked up on the next cycle.
+/// Reads and writes `~/Library/Application Support/llmctl/config.json`, which holds
+/// `{ "api": "<base URL>", "web_token": "<token>" }`. The presence and validity of the file is the
+/// first-run signal (`hasLocalCredentials`), and `refresh()` re-reads it so a rotated token is picked up
+/// on the next cycle. `LLMCenterSignInService` writes it after an in-app authorization.
 ///
-/// The store also *writes* the file, for one narrow case: `LLMCenterSignInService` completing an
-/// in-app authorization. `llmctl auth login` short-circuits on any non-empty `web_token` without ever
-/// validating it server-side, so an expired token leaves the CLI unable to re-login — the app finishing
-/// the flow itself is the only way out. Writes preserve every key the CLI owns (see `save`).
+/// The path is shared with the `llmctl` CLI, which stores its own keys (`access_key`, `model`, `env`)
+/// in the same file. OpenUsage does not depend on that tool in any way, but it does not clobber its
+/// keys either: writes are read-modify-write (see `save`), so both can use one login.
+
 struct LLMCenterAuthStore: Sendable {
     var files: TextFileAccessing
     var configPath: String
@@ -61,30 +61,30 @@ struct LLMCenterAuthStore: Sendable {
         guard let api = Self.text(object["api"]),
               let webToken = Self.text(object["web_token"])
         else { return nil }
-        // A host the CLI recorded before it was retired is rewritten here rather than at each call
-        // site, so every request — usage and sign-in alike — talks to the live deployment.
+        // A host recorded before it was retired is rewritten here rather than at each call site, so
+        // every request — usage and sign-in alike — talks to the live deployment.
         return LLMCenterAuth(apiBaseURL: LLMCenterHost.migrated(api), webToken: webToken)
     }
 
-    /// Just the API base URL, which `loadAuth()` can't supply once the token is gone: sign-in has to
-    /// reach the same LLM Center deployment the CLI logged into, and that host is only recorded here.
-    /// A machine that never ran `llmctl auth login` has no file and no host to talk to — hence `nil`,
-    /// which the sign-in service surfaces as a first-run error rather than guessing a hostname.
-    func loadAPIBaseURL() throws -> String? {
-        guard let object = try loadObject() else { return nil }
-        return Self.text(object["api"]).map(LLMCenterHost.migrated)
+    /// The API base URL to authorize against, which `loadAuth()` can't supply once the token is gone.
+    /// Falls back to `LLMCenterHost.live` when nothing on disk names a server, so a machine that has
+    /// never signed in can still start the flow — a recorded host always wins, since it may name a
+    /// deployment we don't know about.
+    func loadAPIBaseURL() throws -> String {
+        guard let object = try loadObject() else { return LLMCenterHost.live }
+        return Self.text(object["api"]).map(LLMCenterHost.migrated) ?? LLMCenterHost.live
     }
 
-    /// Writes a freshly authorized token back into the CLI's own config, so `llmctl` and OpenUsage keep
-    /// sharing one login. Read-modify-write: every key already in the file survives untouched — the CLI
-    /// also stores `access_key`, `model`, and `env`, and clobbering those would break it. `api` is only
-    /// filled in when missing — or when the recorded host is one we know is retired, since leaving that
-    /// in place would keep `llmctl` itself broken even though the app has recovered. `app_code` is only
-    /// written when the authorization actually returned one, so a value the CLI set is never replaced
-    /// with an invented one.
+    /// Writes a freshly authorized token back to disk. Read-modify-write: every key already in the file
+    /// survives untouched — the `llmctl` CLI shares this path and also stores `access_key`, `model`, and
+    /// `env` here, and clobbering those would break it for no reason. `api` is only filled in when
+    /// missing — or when the recorded host is one we know is retired, since leaving a dead address on
+    /// disk would keep anything else reading the file broken even though the app has recovered.
+    /// `app_code` is only written when the authorization actually returned one, so an existing value is
+    /// never replaced with an invented one.
     func save(webToken: String, appCode: String?, api: String) throws {
-        // A file we can't parse must not silently lose the CLI's other keys, but it also must not trap
-        // the user: the whole point of in-app sign-in is recovering a broken login. So a corrupt file is
+        // A file we can't parse must not silently lose the other keys, but it also must not trap the
+        // user: the whole point of in-app sign-in is recovering a broken login. So a corrupt file is
         // rebuilt from scratch and the loss is logged loudly rather than passed over.
         var object: [String: Any]
         do {
@@ -92,7 +92,7 @@ struct LLMCenterAuthStore: Sendable {
         } catch {
             AppLog.error(
                 LogTag.auth("llmcenter"),
-                "config.json is unparsable; rewriting it from scratch, other llmctl keys will be lost: \(error.localizedDescription)"
+                "config.json is unparsable; rewriting it from scratch, any other keys in it will be lost: \(error.localizedDescription)"
             )
             object = [:]
         }
@@ -100,7 +100,7 @@ struct LLMCenterAuthStore: Sendable {
         if let recorded = Self.text(object["api"]) {
             // The one case where an existing value is replaced: a host confirmed dead. `api` reached
             // this method already migrated (sign-in read it through `loadAPIBaseURL`), so writing it
-            // back repairs the file the CLI can no longer fix for itself.
+            // back repairs a file that would otherwise stay pointed at a dead address.
             if LLMCenterHost.isRetired(recorded) {
                 object["api"] = LLMCenterHost.migrated(recorded)
             }

@@ -115,7 +115,7 @@ final class WidgetDataStoreTests: XCTestCase {
     }
 
     func testProviderErrorCategoryIsPublishedAndClearedWithTheMessage() async {
-        // The dashboard branches on the *kind* of failure (LLM Center's expired-login sign-in row), so
+        // The dashboard branches on the *kind* of failure (LLMCenter's expired-login sign-in row), so
         // the category has to travel with the message and disappear with it.
         let provider = Provider(id: "test", displayName: "Test", icon: .providerMark("claude"))
         let meter = WidgetDescriptor(

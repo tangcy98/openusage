@@ -41,9 +41,12 @@ final class TelemetryStore {
         return minted
     }
 
-    /// Whether telemetry is enabled. Opt-out design: defaults to `true` when the user has never chosen.
+    /// Whether telemetry is enabled. Opt-*in* in this fork: it defaults to off until the user turns it
+    /// on, because the build carries an in-house provider and crash stack traces can name its code even
+    /// though `TelemetryRecorder` withholds the provider from every event property. (Upstream OpenUsage
+    /// ships this as opt-out, defaulting to true.)
     var enabled: Bool {
-        get { defaults.bool(forKey: Self.enabledKey, default: true) }
+        get { defaults.bool(forKey: Self.enabledKey, default: false) }
         set { defaults.set(newValue, forKey: Self.enabledKey) }
     }
 

@@ -7,7 +7,7 @@ Settings lives inside the popover — there is no separate window. Open it from 
 | Setting | Options | What it does |
 |---|---|---|
 | Show Total Spend | on/off | Whether the cross-provider [Total Spend](dashboard.md#total-spend) card shows at the top of the dashboard. On by default; the card appears whenever at least one enabled provider tracks spend (Claude, Codex, Cursor, Grok, OpenCode). |
-| Auto Sign In to LLM Center | on/off | Only shown while LLM Center is enabled. Off by default: when on, OpenUsage opens the browser by itself the first time a refresh finds the LLM Center login expired, instead of waiting for you to click **Sign In to LLM Center** on the card. It tries at most once per launch, and never on the very first refresh after launch — so a login that's already expired when you start the app opens the browser one refresh cycle later, not the moment you log in. See [LLM Center](providers/llmcenter.md#signing-in-from-the-app). |
+| Auto Sign In to LLMCenter | on/off | Only shown while LLMCenter is enabled. Off by default: when on, OpenUsage opens the browser by itself the first time a refresh finds the LLMCenter login expired, instead of waiting for you to click **Sign In to LLMCenter** on the card. It tries at most once per launch, and never on the very first refresh after launch — so a login that's already expired when you start the app opens the browser one refresh cycle later, not the moment you log in. See [LLMCenter](providers/llmcenter.md#signing-in-from-the-app). |
 | Launch at Login | on/off | Registers the app as a login item (the system's login-item registry is the source of truth). |
 | Global Shortcut | record a shortcut | Global shortcut that toggles the popover from anywhere. Click the field and press a combo; the ⓧ clears it and disables the shortcut. |
 
@@ -59,7 +59,7 @@ All three alerts default off. The first time you turn one on, OpenUsage asks for
 | Setting | Options | What it does |
 |---|---|---|
 | Hide From Screen Share | On / Off | Off (default). On replaces the menu bar strip with the OpenUsage icon and wordmark while your screen is being shared or recorded, and restores your starred metrics the moment the capture ends. See [Menu bar](menu-bar.md#hiding-usage-while-screen-sharing). |
-| Share Anonymous Usage | On / Off | On (default) shares anonymous, daily usage summaries — no account details, credentials, or usage values. Off stops all sharing immediately. See [Privacy & Usage Data](privacy.md) for exactly what is and isn't sent. |
+| Share Anonymous Usage | On / Off | Off (default in this build). On shares anonymous, daily usage summaries — no account details, credentials, or usage values, and nothing about LLMCenter. See [Privacy & Usage Data](privacy.md) for exactly what is and isn't sent. |
 
 ## Advanced
 

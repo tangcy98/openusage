@@ -179,7 +179,7 @@ extension WidgetDescriptor {
 
     /// Marks a tile the provider builds itself as a Total Spend contributor. `spendTiles` sets the flag
     /// for the shared Today / Yesterday / Last 30 Days set; a provider whose spend rows come from its
-    /// own API rather than `SpendTileMapper` (LLM Center's official CNY rows) opts in through here, so
+    /// own API rather than `SpendTileMapper` (LLMCenter's official CNY rows) opts in through here, so
     /// the ring's capability gate stays a descriptor flag rather than a title match.
     func contributingToTotalSpend() -> WidgetDescriptor {
         var copy = self

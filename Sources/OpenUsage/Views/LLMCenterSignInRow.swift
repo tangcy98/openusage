@@ -1,12 +1,9 @@
 import SwiftUI
 
-/// The in-app sign-in affordance on the LLM Center card, shown when the saved token has expired.
+/// The in-app sign-in affordance on the LLMCenter card, shown when there is no usable login.
 ///
-/// It exists because `llmctl auth login` cannot recover from an expired token — it treats any non-empty
-/// `web_token` as "already signed in" and returns without contacting the server — so the usual "run the
-/// CLI again" instruction is a dead end for this provider. The row sits above the caret rather than
-/// behind it: the card is showing stale numbers precisely because the login broke, so the way out must
-/// not be hidden.
+/// The row sits above the caret rather than behind it: the card is showing an error precisely because
+/// the login is missing or broken, so the way out must not be hidden.
 ///
 /// Renders nothing without a service in the environment (previews, share-card renders), matching how the
 /// Codex reset-claim affordance behaves.
@@ -58,7 +55,7 @@ struct LLMCenterSignInRow: View {
             signIn.signIn()
         } label: {
             HStack(spacing: 4) {
-                Text("Sign In to LLM Center")
+                Text("Sign In to LLMCenter")
                     .font(.system(size: density.supportingPointSize, weight: .medium))
                     .lineLimit(1)
                 Image(systemName: "arrow.up.right")
@@ -69,7 +66,7 @@ struct LLMCenterSignInRow: View {
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
-        .accessibilityLabel("Sign in to LLM Center, opens in browser")
+        .accessibilityLabel("Sign in to LLMCenter, opens in browser")
     }
 
     private func waiting(_ signIn: LLMCenterSignInService) -> some View {

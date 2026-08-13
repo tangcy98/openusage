@@ -143,9 +143,9 @@ struct WidgetGroupedListView: View {
         /// bottom of the collapsible expanded section. They collapse with the caret — part of the
         /// expander, not always-visible chrome.
         case links([ProviderLink])
-        /// LLM Center only: the in-app sign-in action shown when its token has expired. Deliberately a
-        /// special case rather than a general "provider action" slot — `llmctl auth login` is uniquely
-        /// unable to replace an expired token, so no other provider needs this today.
+        /// LLMCenter only: the in-app sign-in action shown when its login is missing or expired.
+        /// Deliberately a special case rather than a general "provider action" slot — no other provider
+        /// carries a browser authorization the app can complete on its own today.
         case signIn
 
         var id: String {
@@ -232,12 +232,17 @@ struct WidgetGroupedListView: View {
             + (isExpanded && hasLinks ? [.links(links)] : [])
     }
 
-    /// LLM Center's expired-token recovery row. Visible while the provider's latest failure is an expiry,
-    /// and kept alive through an in-flight or just-finished sign-in so the result state isn't yanked off
-    /// screen the moment the refresh clears the error.
+    /// LLMCenter's sign-in row. Visible while the provider's latest failure is one that signing in
+    /// fixes — an expired token, or no login at all — and kept alive through an in-flight or
+    /// just-finished sign-in so the result state isn't yanked off screen the moment the refresh clears
+    /// the error.
     private func showsSignInRow(for providerID: String) -> Bool {
         guard providerID == "llmcenter", let llmCenterSignIn else { return false }
-        return dataStore.errorCategory(for: providerID) == .authExpired || llmCenterSignIn.phase != .idle
+        if llmCenterSignIn.phase != .idle { return true }
+        switch dataStore.errorCategory(for: providerID) {
+        case .authExpired, .notLoggedIn: return true
+        default: return false
+        }
     }
 
     /// The centered caret at the bottom of a provider card that reveals or hides its On Demand metrics

@@ -1,6 +1,6 @@
 # Privacy & Usage Data
 
-OpenUsage can share **anonymous** usage data to help us understand how the app is used and catch problems. It is on by default and you can turn it off any time in **Settings → Privacy → Share Anonymous Usage**.
+OpenUsage can share **anonymous** usage data to help us understand how the app is used and catch problems. In this build it is **off by default** — turn it on any time in **Settings → Privacy → Share Anonymous Usage**.
 
 ## What is shared
 
@@ -19,6 +19,10 @@ It also reports **crashes**, so we can find and fix the bugs that make the app q
 - No account details, names, emails, or credentials.
 - No actual usage **values** (no spend amounts, token counts, or limits).
 - No error **messages** or file paths — only coarse error categories as counts.
+- **Nothing about LLMCenter.** It is an in-house provider, so it is withheld from sharing entirely: its
+  id never appears in the enabled-provider list, its metrics never appear in the enabled/pinned/expanded
+  lists, and it never produces a provider-refresh event. This holds whether or not the toggle is on, and
+  it is not something you have to configure.
 - Nothing while the toggle is off.
 
 ## Credentials stored on this Mac
@@ -60,4 +64,4 @@ toggle controls PostHog events.
 
 ## Turning it off
 
-Open **Settings → Privacy** and switch **Share Anonymous Usage** off. Sharing stops immediately and nothing further is sent.
+Open **Settings → Privacy** and switch **Share Anonymous Usage** off. Sharing stops immediately and nothing further is sent. It is off until you switch it on, so a build you never touch sends nothing at all.

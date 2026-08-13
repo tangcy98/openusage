@@ -20,7 +20,6 @@ enum LLMCenterAuthPoll: Sendable, Equatable {
 }
 
 enum LLMCenterSignInError: Error, LocalizedError, Equatable {
-    case apiBaseURLUnknown
     case sessionFailed(detail: String)
     case authorizeURLInvalid
     case pollFailed(code: String?)
@@ -29,17 +28,15 @@ enum LLMCenterSignInError: Error, LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .apiBaseURLUnknown:
-            return "No LLM Center server on record. Run `llmctl auth login` once to set it up."
         case .sessionFailed:
-            return "Couldn't start the LLM Center sign-in. Try again in a moment."
+            return "Couldn't start the LLMCenter sign-in. Try again in a moment."
         case .authorizeURLInvalid:
-            return "LLM Center returned an unusable sign-in link. Try again in a moment."
+            return "LLMCenter returned an unusable sign-in link. Try again in a moment."
         case .pollFailed(let code):
             if let code, !code.isEmpty {
-                return "LLM Center declined the sign-in (\(code)). Try again."
+                return "LLMCenter declined the sign-in (\(code)). Try again."
             }
-            return "LLM Center declined the sign-in. Try again."
+            return "LLMCenter declined the sign-in. Try again."
         case .timedOut:
             return "Sign-in timed out. Click Sign In to start over."
         case .stateUnavailable:
@@ -48,13 +45,10 @@ enum LLMCenterSignInError: Error, LocalizedError, Equatable {
     }
 }
 
-/// Drives the same three-step CLI authorization `llmctl auth login` uses: open a session, send the user
-/// to the browser, then poll until the server hands back a token. None of the three needs an existing
-/// credential, which is what makes it a recovery path for an expired login.
-///
-/// This exists because `llmctl auth login` only checks whether `web_token` is non-empty locally — it
-/// never validates it against the server, so it exits successfully without re-authorizing and an expired
-/// token can't be replaced from the CLI at all.
+/// Drives LLMCenter's three-step CLI authorization protocol: open a session, send the user to the
+/// browser, then poll until the server hands back a token. None of the three steps needs an existing
+/// credential — which is what lets it serve as both the first sign-in and the recovery path for an
+/// expired one. See docs/research/llm-center-api.md.
 struct LLMCenterAuthClient: Sendable {
     var http: any HTTPClient
 
@@ -121,10 +115,11 @@ struct LLMCenterAuthClient: Sendable {
     /// `GET {api}/llm/api/cli/auth/poll?state=…`. The verb matters: the same path answers a POST with
     /// HTTP 500, so this must stay a GET with the state in the query string.
     ///
-    /// Success is "there is a non-empty `webToken`", never a status string. The literal the server sends
-    /// on completion has not been observed (it needs a real human authorization to produce), so matching
-    /// on it would risk discarding a token we were actually handed. Anything else without a token is
-    /// treated as a refusal rather than as "keep waiting".
+    /// Success is "there is a non-empty `webToken`", never a status string. A completed authorization
+    /// was observed sending `status: "completed"` (2026-08-13), but branching on that literal would risk
+    /// discarding a token we were actually handed if the server ever words it differently — the token's
+    /// presence is the fact that matters. Anything else without a token is treated as a refusal rather
+    /// than as "keep waiting".
     func poll(api: String, state: String) async throws -> LLMCenterAuthPoll {
         guard var components = Self.url(api: api, path: "llm/api/cli/auth/poll")
             .flatMap({ URLComponents(url: $0, resolvingAgainstBaseURL: false) })
@@ -155,9 +150,6 @@ struct LLMCenterAuthClient: Sendable {
             .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
             let appCode = (data["appCode"] as? String)?
                 .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-            // Record what the server actually calls the completed state. We deliberately don't branch on
-            // it (see the doc comment), but the literal is worth knowing, and the success path is the
-            // only place it ever appears. Keys only — never the token itself.
             AppLog.debug(
                 LogTag.auth("llmcenter"),
                 "poll returned a token; status=\(data["status"] as? String ?? "<none>") "

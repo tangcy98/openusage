@@ -221,7 +221,7 @@ struct WidgetRowView: View {
     // The headline value is the row's payload — the number the user opened the popover to read —
     // so it sits at `.primary` (vibrant full-contrast on the popover glass); the surrounding
     // context (reset countdown, deficit) stays `.secondary`. On a meter that carries a model
-    // breakdown (a spend-period quota row such as LLM Center's Today / This Month) the headline is
+    // breakdown (a spend-period quota row such as LLMCenter's Today / This Month) the headline is
     // also the breakdown's hover target, exactly like the unbounded rows' value column — same chip,
     // same dwell, same anchor — so a bar row and a text row reveal their models the same way.
     @ViewBuilder
