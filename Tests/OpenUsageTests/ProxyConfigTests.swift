@@ -28,6 +28,18 @@ final class ProxyConfigTests: XCTestCase {
         XCTAssertEqual(ProxyConfig.load(text: #"{"proxy":{"enabled":true,"url":"https://host"}}"#)?.port, 443)
     }
 
+    func testParsesExcludedDomains() {
+        let config = ProxyConfig.load(text: #"{"proxy":{"enabled":true,"url":"http://127.0.0.1:7890","excludedDomains":["modelbest.co","*.internal"]}}"#)
+
+        XCTAssertEqual(config?.excludedDomains, ["modelbest.co", "*.internal"])
+    }
+
+    func testExcludedDomainsDefaultsToEmpty() {
+        let config = ProxyConfig.load(text: #"{"proxy":{"enabled":true,"url":"http://127.0.0.1:7890"}}"#)
+
+        XCTAssertEqual(config?.excludedDomains, [])
+    }
+
     func testDisabledMissingOrInvalidConfigTurnsProxyOff() {
         XCTAssertNil(ProxyConfig.load(text: #"{"proxy":{"enabled":false,"url":"socks5://127.0.0.1:1080"}}"#))
         XCTAssertNil(ProxyConfig.load(text: #"{"proxy":{"enabled":true,"url":"ftp://127.0.0.1:21"}}"#)) // unsupported scheme

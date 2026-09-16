@@ -18,7 +18,7 @@ struct SettingsMigration: Sendable {
 enum SettingsSchema {
     /// Current schema version. Keep equal to the highest migration `version` below (or the baseline when
     /// there are none). This is NOT the app version — bump it only alongside a migration you add.
-    static let current = 2
+    static let current = 3
 
     /// The provider IDs that existed when the v2 migration shipped, frozen forever. A migration is a
     /// point-in-time transform: any future build with more providers also contains this migration, so a
@@ -27,6 +27,11 @@ enum SettingsSchema {
     static let v2ProviderIDs = [
         "antigravity", "claude", "codex", "copilot", "cursor", "devin", "grok", "openrouter", "zai"
     ]
+
+    /// The always-seeded providers as of the v3 migration, frozen like `v2ProviderIDs`. The live set is
+    /// `FirstRunSeeder.alwaysSeededProviderIDs`; this is a point-in-time copy on purpose, so adding a
+    /// provider there later can't retroactively change what this transform does to an old install.
+    static let v3AlwaysSeededProviderIDs = ["llmcenter"]
 
     /// Ordered migrations, each taking the domain one version higher. v1 is the baseline — the settings
     /// shape at the moment this system replaced the beta-era "wipe on every update" behavior — so it
@@ -49,6 +54,23 @@ enum SettingsSchema {
             if defaults.stringArray(forKey: "openusage.knownProviders.v1") == nil {
                 defaults.set(v2ProviderIDs, forKey: "openusage.knownProviders.v1")
             }
+        },
+
+        // v3 re-offers the always-seeded providers to the installs that met them before
+        // `NewProviderSeeder` knew to force them on. Those installs marked LLMCenter "known" and left it
+        // off (its credentials only exist after a sign-in the hidden card is the entry point for), and
+        // the one-shot new-provider pass never revisits a known id — so the card stayed invisible for
+        // good. Dropping the id from the known set makes the next launch treat it as new again, and
+        // `NewProviderSeeder` seeds it on.
+        //
+        // This does re-enable the provider for anyone in that window who turned it off by hand; the
+        // owner accepted that (the shipped cohort is small and rarely turns it off, and a missing card
+        // is the worse outcome). Their next toggle sticks: the id is known again from this launch on.
+        SettingsMigration(version: 3) { defaults in
+            guard let known = defaults.stringArray(forKey: "openusage.knownProviders.v1") else { return }
+            let pruned = known.filter { !v3AlwaysSeededProviderIDs.contains($0) }
+            guard pruned.count != known.count else { return }
+            defaults.set(pruned, forKey: "openusage.knownProviders.v1")
         }
     ]
 }

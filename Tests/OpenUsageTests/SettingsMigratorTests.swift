@@ -160,7 +160,7 @@ final class SettingsMigratorTests: XCTestCase {
     }
 
     /// A legacy install (no schema version) running the real, shipped schema keeps its settings while
-    /// being stamped forward — today's schema ships zero migrations, so nothing is transformed or lost.
+    /// being migrated forward through every step.
     func testLegacyInstallKeepsSettingsUnderShippedSchema() {
         let (defaults, domain) = makeDefaults("LegacyReal")
         defer { defaults.removePersistentDomain(forName: domain) }
@@ -251,6 +251,97 @@ final class SettingsMigratorTests: XCTestCase {
         SettingsMigrator.migrate(defaults: defaults, domainName: domain)
 
         XCTAssertEqual(defaults.stringArray(forKey: "openusage.enabledProviders.v1"), enabledAfterFirst)
+    }
+
+    // MARK: - v3: re-offer the always-seeded providers
+
+    /// The rescue case: an install that already ran the build where LLMCenter shipped has it marked
+    /// known and left off. Dropping it from the known set is what lets `NewProviderSeeder` see it as new
+    /// again on the next launch and seed it on.
+    func testV3DropsAlwaysSeededProvidersFromTheKnownSet() {
+        let (defaults, domain) = makeDefaults("V3Known")
+        defer { defaults.removePersistentDomain(forName: domain) }
+        defaults.set(2, forKey: SettingsMigrator.schemaVersionKey)
+        defaults.set(["claude", "copilot", "llmcenter"], forKey: "openusage.knownProviders.v1")
+        defaults.set(["claude", "copilot"], forKey: "openusage.enabledProviders.v1")
+
+        let result = SettingsMigrator.migrate(defaults: defaults, domainName: domain)
+
+        XCTAssertEqual(result, SettingsSchema.current)
+        XCTAssertEqual(
+            Set(defaults.stringArray(forKey: "openusage.knownProviders.v1") ?? []),
+            ["claude", "copilot"], "llmcenter is new again"
+        )
+        XCTAssertEqual(
+            Set(defaults.stringArray(forKey: "openusage.enabledProviders.v1") ?? []),
+            ["claude", "copilot"], "v3 only touches the known set; seeding is NewProviderSeeder's job"
+        )
+    }
+
+    /// End-to-end: the migration plus the seeder produce the behavior the owner asked for — an updating
+    /// user who never signed in still gets the LLMCenter card.
+    @MainActor
+    func testV3AndSeederTogetherRestoreTheLLMCenterCard() async {
+        let (defaults, domain) = makeDefaults("V3EndToEnd")
+        defer { defaults.removePersistentDomain(forName: domain) }
+        defaults.set(2, forKey: SettingsMigrator.schemaVersionKey)
+        defaults.set(["claude", "copilot", "llmcenter"], forKey: "openusage.knownProviders.v1")
+        defaults.set(["claude", "copilot"], forKey: "openusage.enabledProviders.v1")
+
+        SettingsMigrator.migrate(defaults: defaults, domainName: domain)
+
+        let enablement = ProviderEnablementStore(defaults: defaults)
+        XCTAssertFalse(enablement.isEnabled("llmcenter"), "still off as the store loads")
+
+        let providers = ProviderCatalog.make(defaults: defaults)
+        await NewProviderSeeder.reconcileIfNeeded(providers: providers, enablement: enablement)?.value
+
+        XCTAssertTrue(enablement.isEnabled("llmcenter"))
+        XCTAssertTrue(enablement.isEnabled("claude"), "existing choices are untouched")
+    }
+
+    /// Re-running the v3 step (an interrupted upgrade replays it) changes nothing, and a later launch
+    /// must not undo a user who turned the provider off after the rescue.
+    func testV3IsIdempotentAndDoesNotReRunOnALaterLaunch() {
+        let (defaults, domain) = makeDefaults("V3Idempotent")
+        defer { defaults.removePersistentDomain(forName: domain) }
+        defaults.set(2, forKey: SettingsMigrator.schemaVersionKey)
+        defaults.set(["claude", "llmcenter"], forKey: "openusage.knownProviders.v1")
+
+        SettingsMigrator.migrate(defaults: defaults, domainName: domain)
+        defaults.set(2, forKey: SettingsMigrator.schemaVersionKey)  // simulate an interrupted upgrade
+        SettingsMigrator.migrate(defaults: defaults, domainName: domain)
+        XCTAssertEqual(Set(defaults.stringArray(forKey: "openusage.knownProviders.v1") ?? []), ["claude"])
+
+        // A later launch is already at `current`: the step does not run again, so a provider the user
+        // turned off (and that is known again by now) is not re-offered a second time.
+        defaults.set(["claude", "llmcenter"], forKey: "openusage.knownProviders.v1")
+        SettingsMigrator.migrate(defaults: defaults, domainName: domain)
+        XCTAssertEqual(
+            Set(defaults.stringArray(forKey: "openusage.knownProviders.v1") ?? []),
+            ["claude", "llmcenter"], "the rescue is one-shot"
+        )
+    }
+
+    /// A fresh install stamps v3 and runs nothing — `FirstRunSeeder` already forces the card on there.
+    func testV3DoesNotRunOnAFreshInstall() {
+        let (defaults, domain) = makeDefaults("V3Fresh")
+        defer { defaults.removePersistentDomain(forName: domain) }
+
+        let result = SettingsMigrator.migrate(defaults: defaults, domainName: domain)
+
+        XCTAssertEqual(result, SettingsSchema.current)
+        XCTAssertNil(defaults.stringArray(forKey: "openusage.knownProviders.v1"))
+    }
+
+    /// The frozen v3 list must stay a subset of the live always-seeded set, or the migration would
+    /// re-offer a provider the seeder no longer forces on (leaving it off and looking like a bug).
+    @MainActor
+    func testV3ListMatchesTheLiveAlwaysSeededSet() {
+        XCTAssertTrue(
+            Set(SettingsSchema.v3AlwaysSeededProviderIDs).isSubset(of: FirstRunSeeder.alwaysSeededProviderIDs),
+            "a provider dropped from alwaysSeededProviderIDs must also leave the v3 migration list"
+        )
     }
 
     // MARK: - Schema integrity

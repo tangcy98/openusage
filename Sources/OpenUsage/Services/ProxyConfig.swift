@@ -28,6 +28,9 @@ struct ProxyConfig: Equatable, Sendable {
     var port: UInt16
     var username: String?
     var password: String?
+    /// Extra domains that should bypass the proxy, in addition to the always-excluded loopback hosts.
+    /// Optional `"excludedDomains"` array in config.json, e.g. `["modelbest.co", "*.internal"]`.
+    var excludedDomains: [String]
 
     static let configPath = "~/.openusage/config.json"
 
@@ -59,7 +62,8 @@ struct ProxyConfig: Equatable, Sendable {
             host: host,
             port: url.port.flatMap { UInt16(exactly: $0) } ?? scheme.defaultPort,
             username: url.user(percentEncoded: false),
-            password: url.password(percentEncoded: false)
+            password: url.password(percentEncoded: false),
+            excludedDomains: (proxy["excludedDomains"] as? [String]) ?? []
         )
     }
 
@@ -78,7 +82,7 @@ struct ProxyConfig: Equatable, Sendable {
         if let username, let password {
             configuration.applyCredential(username: username, password: password)
         }
-        configuration.excludedDomains = ["localhost", "127.0.0.1", "::1"]
+        configuration.excludedDomains = ["localhost", "127.0.0.1", "::1"] + excludedDomains
         return configuration
     }
 }

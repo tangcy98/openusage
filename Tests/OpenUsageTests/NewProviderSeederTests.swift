@@ -102,6 +102,67 @@ final class NewProviderSeederTests: XCTestCase {
         XCTAssertEqual(enableCallbacks, ["windsurf"], "the seeder must not fire a second enable")
     }
 
+    // MARK: - Always-seeded providers
+
+    /// The bug this fixes: a user who arrives at LLMCenter through an update (not a fresh install) gets
+    /// the card. Its credentials are written by the card's own Sign In button, so a probe can never hit
+    /// on a machine that has not signed in — it must be enabled without one.
+    func testAlwaysSeededNewProviderIsEnabledWithoutACredentialProbe() async {
+        let enablement = seededStore("always-seeded", enabled: ["claude", "copilot"],
+                                     known: ["claude", "copilot", "codex", "cursor"])
+        let llmCenter = probe("llmcenter", hasCredentials: false)
+
+        let task = NewProviderSeeder.reconcileIfNeeded(
+            providers: [probe("claude", hasCredentials: true), llmCenter], enablement: enablement
+        )
+        await task?.value
+
+        XCTAssertTrue(enablement.isEnabled("llmcenter"), "an update must not hide the card")
+        XCTAssertEqual(llmCenter.probeCount, 0, "no probe: its credentials come from the card itself")
+        XCTAssertTrue(enablement.knownIDs.contains("llmcenter"))
+    }
+
+    /// The other half of the requirement: once the user turns it off, no later launch brings it back.
+    /// The id is known by then, so it is never "new" again.
+    func testAlwaysSeededProviderStaysOffAfterTheUserTurnsItOff() async {
+        let defaults = makeDefaults("always-seeded-off")
+        let enablement = ProviderEnablementStore(defaults: defaults)
+        enablement.seedEnabledProviders(["claude"])
+        enablement.registerKnownProviders(["claude"])
+        let providers = [probe("claude", hasCredentials: true), probe("llmcenter", hasCredentials: false)]
+
+        await NewProviderSeeder.reconcileIfNeeded(providers: providers, enablement: enablement)?.value
+        XCTAssertTrue(enablement.isEnabled("llmcenter"))
+
+        enablement.setEnabled(false, for: "llmcenter")
+
+        // Two more launches, reading the same persisted store: the choice holds.
+        for _ in 0..<2 {
+            let relaunched = ProviderEnablementStore(defaults: defaults)
+            let task = NewProviderSeeder.reconcileIfNeeded(providers: providers, enablement: relaunched)
+            await task?.value
+            XCTAssertFalse(relaunched.isEnabled("llmcenter"), "the user's choice must stick")
+        }
+    }
+
+    /// The empty-known-set branch baselines without probing, but must still seed the always-on card —
+    /// every build that could leave a store in this state predates LLMCenter, so there is no user
+    /// choice here to override.
+    func testAlwaysSeededProviderIsEnabledEvenWhenBaseliningAnEmptyKnownSet() {
+        let enablement = seededStore("always-seeded-baseline", enabled: ["claude"], known: [])
+        let grok = probe("grok", hasCredentials: true)
+
+        let task = NewProviderSeeder.reconcileIfNeeded(
+            providers: [probe("claude", hasCredentials: true), grok, probe("llmcenter", hasCredentials: false)],
+            enablement: enablement
+        )
+
+        XCTAssertNil(task)
+        XCTAssertTrue(enablement.isEnabled("llmcenter"))
+        XCTAssertFalse(enablement.isEnabled("grok"), "ordinary providers are still not auto-enabled here")
+        XCTAssertEqual(grok.probeCount, 0)
+    }
+
     // MARK: - Helpers
 
     private func seededStore(_ name: String, enabled: Set<String>, known: Set<String>) -> ProviderEnablementStore {

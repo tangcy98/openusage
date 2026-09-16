@@ -9,6 +9,10 @@ import Foundation
 ///
 /// One-shot semantics: new IDs are marked known synchronously, before the probe. A new provider without
 /// credentials stays off and is never probed again — enabling it later is the user's call.
+///
+/// `FirstRunSeeder.alwaysSeededProviderIDs` skips the probe entirely (see `forceSeedAlwaysOn`), so the
+/// update path matches the fresh-install path: a provider that is on for a new user is also on for a
+/// user who arrives at it through an update.
 @MainActor
 enum NewProviderSeeder {
     /// Returns the detection task (for tests to await), or `nil` when there is nothing to do — the
@@ -25,19 +29,27 @@ enum NewProviderSeeder {
         // An enabled-list store with no known set predates the tracking (an unbundled `swift run`
         // seeded before this shipped — bundled installs get it from the v2 settings migration or
         // `FirstRunSeeder`). Baseline it to the current registry without probing: we can't tell "new"
-        // from "user turned it off", so auto-enabling anything here could override a real choice.
+        // from "user turned it off", so auto-enabling anything here could override a real choice. The
+        // always-seeded providers are the exception — every build that could have left a store in this
+        // state predates them, so there is no user choice here to override.
         guard !enablement.knownIDs.isEmpty else {
-            enablement.registerKnownProviders(currentIDs)
+            forceSeedAlwaysOn(enablement.registerKnownProviders(currentIDs), enablement: enablement)
             return nil
         }
 
         let newIDs = enablement.registerKnownProviders(currentIDs)
         guard !newIDs.isEmpty else { return nil }
-        AppLog.info(.config, "new providers since last run: \(newIDs.sorted()); probing local credentials")
+
+        // Force-seed first, then probe only what is left: an always-seeded provider is on either way,
+        // so probing it would just be a wasted subprocess wait.
+        let forced = forceSeedAlwaysOn(newIDs, enablement: enablement)
+        let toProbe = newIDs.subtracting(forced)
+        guard !toProbe.isEmpty else { return nil }
+        AppLog.info(.config, "new providers since last run: \(toProbe.sorted()); probing local credentials")
 
         return Task {
             // Same concurrent local-only probe as first-run detection and the Reset All reseed.
-            let newProviders = providers.filter { newIDs.contains($0.provider.id) }
+            let newProviders = providers.filter { toProbe.contains($0.provider.id) }
             let detected = await FirstRunSeeder.detectLocalProviders(newProviders)
             for id in detected.sorted() {
                 // The probe takes a moment; if the user already turned the provider on themselves,
@@ -47,5 +59,29 @@ enum NewProviderSeeder {
                 enablement.setEnabled(true, for: id)
             }
         }
+    }
+
+    /// Turns on the `FirstRunSeeder.alwaysSeededProviderIDs` members of `newIDs` without probing, and
+    /// returns them so the caller can drop them from the credential probe.
+    ///
+    /// These providers create their credentials *through* the card this seeds into view (LLMCenter's
+    /// Sign In button writes the `config.json` a probe looks for), so gating them on a credential probe
+    /// hides the only thing that could ever satisfy it — the deadlock that kept LLMCenter invisible for
+    /// every user who arrived by update instead of a fresh install.
+    ///
+    /// Keyed off `newIDs` — ids this install has never seen — and not off the enabled list, which is
+    /// what makes "off stays off" hold: turning the provider off happens after it is already known, so
+    /// no later launch sees it as new, and this never runs for it again.
+    @discardableResult
+    private static func forceSeedAlwaysOn(
+        _ newIDs: Set<String>,
+        enablement: ProviderEnablementStore
+    ) -> Set<String> {
+        let forced = FirstRunSeeder.alwaysSeededProviderIDs.intersection(newIDs)
+        for id in forced.sorted() where !enablement.isEnabled(id) {
+            AppLog.info(.config, "new provider \(id): always seeded, enabling without a credential probe")
+            enablement.setEnabled(true, for: id)
+        }
+        return forced
     }
 }
