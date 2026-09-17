@@ -171,10 +171,9 @@ OpenUsage 用读-改-写：只设 `web_token`，`api` 仅在缺失时补写，`a
 `appCode` 为 `null`，且事后 `llmctl models list` exit 0，说明当前服务端行为下不成立。
 
 **自动模式的首轮时序**：`hasCompletedFirstRefresh()` 读的是 `WidgetDataStore.lastRefreshAt`，它在
-`refreshAll` **整批结束后**才盖章，而自动触发发生在单个 provider 的 `refresh()` 内部——所以开着
-Auto Sign In 启动时，第一轮必然命中「no refresh pass has completed yet」这道闸，要等下一个刷新周期
-（默认 5 分钟）才会自动弹。实测：14:02:28 被挡，14:07:32 触发。这符合「避免启动即抢焦点」的设计意图，
-但延迟比预期长。
+`refreshAll` **整批结束后**才盖章，而自动触发发生在单个 provider 的 `refresh()` 内部——所以启动时，
+第一轮必然命中「no refresh pass has completed yet」这道闸，要等下一个刷新周期（默认 5 分钟）才会
+检查是否触发。实测：14:02:28 被挡，14:07:32 触发。这符合「避免启动即抢焦点」的设计意图，但延迟比预期长。
 
 ## 坑位总结
 
@@ -205,8 +204,9 @@ Auto Sign In 启动时，第一轮必然命中「no refresh pass has completed y
 - 应用内登录：没有可用登录时（`ErrorCategory.notLoggedIn` 或 `authExpired`）卡片出现 Sign In 行，
   走上面的 CLI 授权协议拿 token 写回同一个文件。**首次登录同样走这条路，不需要 `llmctl`**：
   `config.json` 缺 `api` 时回退到 `LLMCenterHost.live`（授权协议三步都不需要既有凭据）。
-  默认手动点击；Settings → General 的 **Auto Sign In to LLMCenter** 打开后每个 app 会话自动弹一次
-  （仅限 `authExpired`）。
+  默认手动点击；Settings → General 的 **Auto Sign In to LLMCenter** 可设置间隔（如 5min、1h），
+  过期后启动计时器，到期时自动弹浏览器（仅限 `authExpired`）。手动刷新立即触发，无视延迟。
+  计时器期间如果凭证恢复则取消。失败后需 app 重启或刷新成功才会再试。
 - 实现：`Sources/OpenUsage/Providers/LLMCenter/`（AuthStore / AuthClient / Host / SignInService /
   UsageClient / UsageMapper / Provider）。
 - 文档：`docs/providers/llmcenter.md`（用户向）。

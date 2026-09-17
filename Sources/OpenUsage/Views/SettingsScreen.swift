@@ -17,7 +17,7 @@ struct SettingsScreen: View {
     @State private var launchAtLogin = LaunchAtLoginSetting()
     @State private var commandLineTool = CommandLineToolInstaller()
     @AppStorage(TotalSpendSetting.key) private var showTotalSpend = true
-    @AppStorage(LLMCenterAutoSignInSetting.key) private var llmCenterAutoSignIn = false
+    @AppStorage(LLMCenterAutoSignInSetting.key) private var llmCenterAutoSignInInterval: String = LLMCenterAutoSignInSetting.defaultValue.rawValue
     @AppStorage(AppearanceSetting.key) private var appearance = AppearanceSetting.system
     @AppStorage(TimeFormatSetting.key) private var timeFormat = TimeFormatSetting.auto
     @AppStorage(DensitySetting.key) private var density = DensitySetting.regular
@@ -56,11 +56,17 @@ struct SettingsScreen: View {
                         .settingsSwitchStyle()
                 }
                 // LLMCenter only, and only while it's enabled: no other provider needs the app to
-                // finish a login for it. Off by default — see LLMCenterAutoSignInSetting.
+                // finish a login for it. Never by default — see LLMCenterAutoSignInSetting.
                 if container.enablement.isEnabled("llmcenter") {
                     row("Auto Sign In to LLMCenter") {
-                        Toggle("", isOn: $llmCenterAutoSignIn)
-                            .settingsSwitchStyle()
+                        picker(
+                            Binding(
+                                get: { LLMCenterAutoSignInInterval(rawValue: llmCenterAutoSignInInterval) ?? .never },
+                                set: { llmCenterAutoSignInInterval = $0.rawValue }
+                            ),
+                            options: LLMCenterAutoSignInInterval.allCases,
+                            label: \.displayName
+                        )
                     }
                 }
                 row("Launch at Login") {

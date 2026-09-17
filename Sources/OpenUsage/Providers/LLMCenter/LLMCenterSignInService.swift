@@ -32,13 +32,17 @@ final class LLMCenterSignInService {
     private let makeState: @Sendable () throws -> String
     private let sleep: @Sendable (Duration) async throws -> Void
     private let hasCompletedFirstRefresh: @MainActor () -> Bool
-    private let isAutoEnabled: @Sendable () -> Bool
+    private let autoSignInInterval: @Sendable () -> LLMCenterAutoSignInInterval
 
     @ObservationIgnored private var pollTask: Task<Void, Never>?
-    /// The automatic mode fires at most once per app session. A dead SSO session would otherwise make
-    /// every failed refresh throw another browser window at the user; one attempt per launch recovers the
-    /// ordinary expiry case and leaves the card's button for anything worse.
-    @ObservationIgnored private var autoAttemptedThisSession = false
+    /// The timer task started when automatic sign-in discovers an expiry. Fires after the configured
+    /// interval unless the login recovers in the meantime (from a manual sign-in, external llmctl update,
+    /// or any other source). Canceled on successful refresh or when the user signs in manually.
+    @ObservationIgnored private var expiryTimer: Task<Void, Never>?
+    /// Set after an automatic sign-in attempt fails (timeout, server rejection, or any error). Cleared
+    /// when a refresh succeeds, so the next expiry can trigger automatic sign-in again. Prevents repeated
+    /// browser windows for a dead session.
+    @ObservationIgnored private var autoSignInBlocked = false
 
     init(
         authStore: LLMCenterAuthStore,
@@ -49,8 +53,11 @@ final class LLMCenterSignInService {
         makeState: @escaping @Sendable () throws -> String = LLMCenterSignInService.makeState,
         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
         hasCompletedFirstRefresh: @escaping @MainActor () -> Bool = { true },
-        isAutoEnabled: @escaping @Sendable () -> Bool = {
-            UserDefaults.standard.bool(forKey: LLMCenterAutoSignInSetting.key, default: false)
+        autoSignInInterval: @escaping @Sendable () -> LLMCenterAutoSignInInterval = {
+            guard let raw = UserDefaults.standard.string(forKey: LLMCenterAutoSignInSetting.key) else {
+                return LLMCenterAutoSignInSetting.defaultValue
+            }
+            return LLMCenterAutoSignInInterval(rawValue: raw) ?? LLMCenterAutoSignInSetting.defaultValue
         }
     ) {
         self.authStore = authStore
@@ -61,14 +68,16 @@ final class LLMCenterSignInService {
         self.makeState = makeState
         self.sleep = sleep
         self.hasCompletedFirstRefresh = hasCompletedFirstRefresh
-        self.isAutoEnabled = isAutoEnabled
+        self.autoSignInInterval = autoSignInInterval
     }
 
     /// The card button's entry point. Returns false when a sign-in is already running, so a double-click
-    /// can't open two browser windows.
+    /// can't open two browser windows. Cancels any running timer: a manual sign-in supersedes the delay.
     @discardableResult
     func signIn() -> Bool {
         guard !phase.isInFlight else { return false }
+        expiryTimer?.cancel()
+        expiryTimer = nil
         phase = .starting
         pollTask = Task { [weak self] in
             await self?.run()
@@ -76,13 +85,32 @@ final class LLMCenterSignInService {
         return true
     }
 
-    /// The automatic entry point, called when a refresh fails with an expired login. Every guard lives
-    /// here so the policy is testable without a container.
-    func signInAutomatically() {
-        guard isAutoEnabled() else { return }
+    /// The manual refresh path: called when a forced refresh discovers an expired login. Opens the
+    /// browser immediately, regardless of the configured interval.
+    func signInManually() {
         guard !phase.isInFlight else { return }
-        guard !autoAttemptedThisSession else {
-            AppLog.debug(LogTag.auth("llmcenter"), "auto sign-in already attempted this session; leaving it to the card button")
+        guard !autoSignInBlocked else {
+            AppLog.debug(LogTag.auth("llmcenter"), "manual sign-in skipped: auto sign-in failed earlier and login has not recovered")
+            return
+        }
+        expiryTimer?.cancel()
+        expiryTimer = nil
+        AppLog.info(LogTag.auth("llmcenter"), "manual refresh triggered sign-in immediately")
+        signIn()
+    }
+
+    /// The automatic refresh path: called when a background refresh discovers an expired login. Starts
+    /// a timer (or triggers immediately if the interval is zero) unless the setting is `never`, a sign-in
+    /// is already running, or automatic sign-in was blocked after an earlier failure.
+    func signInAutomatically(interval: LLMCenterAutoSignInInterval) {
+        guard interval != .never else { return }
+        guard !phase.isInFlight else { return }
+        guard !autoSignInBlocked else {
+            AppLog.debug(LogTag.auth("llmcenter"), "auto sign-in blocked: earlier attempt failed and login has not recovered")
+            return
+        }
+        guard expiryTimer == nil else {
+            AppLog.debug(LogTag.auth("llmcenter"), "auto sign-in timer already running")
             return
         }
         // A refresh that fails during launch would open a browser before the user has even seen the
@@ -91,8 +119,40 @@ final class LLMCenterSignInService {
             AppLog.debug(LogTag.auth("llmcenter"), "auto sign-in skipped: no refresh pass has completed yet")
             return
         }
-        autoAttemptedThisSession = true
-        AppLog.info(LogTag.auth("llmcenter"), "auto sign-in starting after an expired-login refresh failure")
+
+        guard let delay = interval.seconds else { return }
+        if delay == 0 {
+            AppLog.info(LogTag.auth("llmcenter"), "auto sign-in starting immediately after expired-login discovery")
+            signIn()
+        } else {
+            AppLog.info(LogTag.auth("llmcenter"), "auto sign-in timer started: \(Int(delay))s until browser opens")
+            expiryTimer = Task { [weak self] in
+                do {
+                    try await Task.sleep(for: .seconds(delay))
+                    guard !Task.isCancelled else { return }
+                    await self?.fireTimer()
+                } catch {
+                    // Cancellation or sleep failure; either way the timer ends here.
+                }
+            }
+        }
+    }
+
+    /// Clears the automatic sign-in block and cancels any running timer. Called when a refresh succeeds,
+    /// so the next expiry can trigger automatic sign-in again.
+    func clearAutoSignInBlock() {
+        autoSignInBlocked = false
+        expiryTimer?.cancel()
+        expiryTimer = nil
+    }
+
+    private func fireTimer() {
+        expiryTimer = nil
+        guard !phase.isInFlight else {
+            AppLog.debug(LogTag.auth("llmcenter"), "auto sign-in timer fired but sign-in already in flight")
+            return
+        }
+        AppLog.info(LogTag.auth("llmcenter"), "auto sign-in timer fired; opening browser")
         signIn()
     }
 
@@ -150,6 +210,7 @@ final class LLMCenterSignInService {
             // `cancel()` already reset the phase.
         } catch {
             AppLog.error(LogTag.auth("llmcenter"), "sign-in failed: \(error.localizedDescription)")
+            autoSignInBlocked = true
             phase = .failed(error.localizedDescription)
         }
     }

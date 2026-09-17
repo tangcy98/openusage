@@ -235,11 +235,25 @@ final class AppContainer {
         )
         dataStore.onRefreshOutcome = { [weak telemetry, weak llmCenterSignIn] providerID, outcome, category, manual in
             telemetry?.record(providerID: providerID, outcome: outcome, category: category, manual: manual)
-            // The green channel's automatic half: an expired LLMCenter login is the one failure the app
-            // can fix by itself. Every gate (setting off, already in flight, once-per-session, wait for
-            // the first refresh pass) lives inside the service.
-            if providerID == "llmcenter", outcome == .failed, category == .authExpired {
-                llmCenterSignIn?.signInAutomatically()
+            // LLMCenter automatic sign-in: an expired login is the one failure the app can fix by itself.
+            // Manual refresh (force: true) triggers immediately; automatic refresh starts a timer based on
+            // the configured interval. Every gate (in-flight check, first-refresh wait, failure block) lives
+            // inside the service.
+            guard providerID == "llmcenter", outcome == .failed, category == .authExpired else {
+                // Successful LLMCenter refresh clears the auto-sign-in block so the next expiry can retry.
+                if providerID == "llmcenter", outcome == .refreshed {
+                    llmCenterSignIn?.clearAutoSignInBlock()
+                }
+                return
+            }
+            if manual {
+                llmCenterSignIn?.signInManually()
+            } else {
+                let interval = LLMCenterAutoSignInInterval(
+                    rawValue: UserDefaults.standard.string(forKey: LLMCenterAutoSignInSetting.key)
+                        ?? LLMCenterAutoSignInSetting.defaultValue.rawValue
+                ) ?? LLMCenterAutoSignInSetting.defaultValue
+                llmCenterSignIn?.signInAutomatically(interval: interval)
             }
         }
         self.telemetry = telemetry

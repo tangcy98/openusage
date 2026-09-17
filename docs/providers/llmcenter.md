@@ -55,11 +55,13 @@ The card is on from the first launch even though you haven't signed in yet — t
 the button is how you sign in. Turn the provider off in Customize and it stays off. See
 [Which Providers Are On](../provider-enablement.md).
 
-Sign-in happens on click by default. Turn on **Auto Sign In to LLMCenter** in Settings → General and
-OpenUsage opens the browser by itself the first time it finds the login expired — at most once per
-launch, so a dead session can't throw a window at you every refresh. It also skips the very first
-refresh after launch, so a login that's already expired when you start the app opens the browser one
-refresh cycle later rather than the instant you log in.
+Sign-in happens on click by default. Set **Auto Sign In to LLMCenter** in Settings → General to an
+interval (e.g., 5 minutes, 1 hour) and OpenUsage starts a timer when it discovers an expired login — if
+the login is still expired when the timer fires, the browser opens automatically. Manual refresh (via the
+dashboard's refresh button or a provider-level refresh) opens the browser immediately, bypassing the
+delay. The timer is canceled if the login recovers from any source (manual sign-in, external `llmctl`
+update) before it fires. If an automatic attempt fails, the app won't retry until either the app restarts
+or a refresh succeeds. The **Never** setting (the default) means sign-in is always manual.
 
 The API host is on the internal network, so a refresh needs the office network or VPN. Handing this
 build to a colleague? See [Local distribution](../local-distribution.md) for the full list of what they
