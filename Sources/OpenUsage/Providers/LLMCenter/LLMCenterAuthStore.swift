@@ -6,6 +6,28 @@ import Foundation
 struct LLMCenterAuth: Hashable, Sendable {
     var apiBaseURL: String
     var webToken: String
+    /// What it takes to renew `webToken` without the browser; `nil` for a login that stored none (an
+    /// older `llmctl`, or a sign-in made before the app kept refresh tokens).
+    var refresh: LLMCenterRefreshGrant?
+    /// When `webToken` stops working: the JWT's own `exp`, else the file's `token_expires_at`. `nil` when
+    /// neither is readable, in which case the token is only renewed after the server rejects it.
+    var tokenExpiresAt: Date?
+}
+
+/// The refresh token plus the OIDC client identity and endpoint it must be redeemed at. All three come
+/// from the server's sign-in response and are stored beside the token (the `llmctl` CLI writes the same
+/// `oidc_*` keys), so renewal never has to guess a deployment's endpoints.
+struct LLMCenterRefreshGrant: Hashable, Sendable {
+    var refreshToken: String
+    var tokenEndpoint: URL
+    var clientId: String
+}
+
+/// The OIDC endpoints a sign-in session was opened against, persisted so a later refresh can reach them.
+struct LLMCenterOIDCMetadata: Equatable, Sendable {
+    var tokenEndpoint: URL? = nil
+    var clientId: String? = nil
+    var redirectUri: String? = nil
 }
 
 enum LLMCenterAuthError: Error, LocalizedError, Equatable {
@@ -63,7 +85,32 @@ struct LLMCenterAuthStore: Sendable {
         else { return nil }
         // A host recorded before it was retired is rewritten here rather than at each call site, so
         // every request — usage and sign-in alike — talks to the live deployment.
-        return LLMCenterAuth(apiBaseURL: LLMCenterHost.migrated(api), webToken: webToken)
+        return LLMCenterAuth(
+            apiBaseURL: LLMCenterHost.migrated(api),
+            webToken: webToken,
+            refresh: Self.refreshGrant(from: object),
+            tokenExpiresAt: Self.expiry(of: webToken, object: object)
+        )
+    }
+
+    /// Only a complete, https-only set counts: a refresh token with no known endpoint can't be redeemed,
+    /// and a non-https endpoint would put the refresh token on the wire in the clear.
+    private static func refreshGrant(from object: [String: Any]) -> LLMCenterRefreshGrant? {
+        guard let refreshToken = text(object["refresh_token"]),
+              let clientId = text(object["oidc_client_id"]),
+              let endpoint = text(object["oidc_token_endpoint"]).flatMap(LLMCenterAuthClient.httpsURL)
+        else { return nil }
+        return LLMCenterRefreshGrant(refreshToken: refreshToken, tokenEndpoint: endpoint, clientId: clientId)
+    }
+
+    /// The token's own `exp` wins: it is what the server enforces. `token_expires_at` is a copy that
+    /// goes stale whenever something other than the CLI replaces `web_token`, so it's only the fallback
+    /// for an opaque (non-JWT) token.
+    private static func expiry(of webToken: String, object: [String: Any]) -> Date? {
+        if let exp = ProviderParse.jwtPayload(webToken)?["exp"].flatMap(ProviderParse.number) {
+            return Date(timeIntervalSince1970: exp)
+        }
+        return ProviderParse.number(object["token_expires_at"]).map { Date(timeIntervalSince1970: $0) }
     }
 
     /// The API base URL to authorize against, which `loadAuth()` can't supply once the token is gone.
@@ -82,7 +129,16 @@ struct LLMCenterAuthStore: Sendable {
     /// disk would keep anything else reading the file broken even though the app has recovered.
     /// `app_code` is only written when the authorization actually returned one, so an existing value is
     /// never replaced with an invented one.
-    func save(webToken: String, appCode: String?, api: String) throws {
+    ///
+    /// The token's companion keys (`refresh_token`, `token_expires_at`, `oidc_*`) are written together
+    /// with it, because `llmctl` reads the same ones: leaving an old refresh token beside a new access
+    /// token would let the CLI "renew" with a stale pair and overwrite the login we just saved.
+    func save(
+        _ tokens: LLMCenterTokenSet,
+        api: String,
+        source: SaveSource,
+        now: Date = Date()
+    ) throws {
         // A file we can't parse must not silently lose the other keys, but it also must not trap the
         // user: the whole point of in-app sign-in is recovering a broken login. So a corrupt file is
         // rebuilt from scratch and the loss is logged loudly rather than passed over.
@@ -96,7 +152,8 @@ struct LLMCenterAuthStore: Sendable {
             )
             object = [:]
         }
-        object["web_token"] = webToken
+        object["web_token"] = tokens.webToken
+        Self.applyTokenCompanions(to: &object, tokens: tokens, source: source, now: now)
         if let recorded = Self.text(object["api"]) {
             // The one case where an existing value is replaced: a host confirmed dead. `api` reached
             // this method already migrated (sign-in read it through `loadAPIBaseURL`), so writing it
@@ -107,7 +164,7 @@ struct LLMCenterAuthStore: Sendable {
         } else {
             object["api"] = api
         }
-        if let appCode = appCode?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+        if let appCode = tokens.appCode?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
             object["app_code"] = appCode
         }
         do {
@@ -122,6 +179,40 @@ struct LLMCenterAuthStore: Sendable {
             throw error
         } catch {
             throw LLMCenterAuthError.saveFailed(detail: error.localizedDescription)
+        }
+    }
+
+    /// Where a saved token came from, which decides what happens to the refresh token already on disk.
+    enum SaveSource: Equatable, Sendable {
+        /// A fresh browser authorization. The server's answer replaces everything: a response without a
+        /// refresh token must not leave the previous login's one behind.
+        case signIn(LLMCenterOIDCMetadata)
+        /// A refresh-token grant. Servers that don't rotate omit `refresh_token` from the answer, in which
+        /// case the one on disk is still the live one and is kept.
+        case refresh
+    }
+
+    private static func applyTokenCompanions(
+        to object: inout [String: Any], tokens: LLMCenterTokenSet, source: SaveSource, now: Date
+    ) {
+        if let refreshToken = tokens.refreshToken {
+            object["refresh_token"] = refreshToken
+        } else if case .signIn = source {
+            object.removeValue(forKey: "refresh_token")
+        }
+        if case .signIn(let oidc) = source {
+            if let endpoint = oidc.tokenEndpoint { object["oidc_token_endpoint"] = endpoint.absoluteString }
+            if let clientId = oidc.clientId { object["oidc_client_id"] = clientId }
+            if let redirectUri = oidc.redirectUri { object["oidc_redirect_uri"] = redirectUri }
+        }
+        // The server's stated lifetime, else what the JWT says; neither known means no stale copy stays.
+        let expiresAt = tokens.expiresIn.map { now.addingTimeInterval($0) }
+            ?? ProviderParse.jwtPayload(tokens.webToken)?["exp"].flatMap(ProviderParse.number)
+                .map { Date(timeIntervalSince1970: $0) }
+        if let expiresAt {
+            object["token_expires_at"] = Int(expiresAt.timeIntervalSince1970)
+        } else {
+            object.removeValue(forKey: "token_expires_at")
         }
     }
 

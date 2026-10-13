@@ -57,7 +57,7 @@ final class LLMCenterAuthStoreTests: XCTestCase {
         let files = FakeFiles([configPath: #"{"api":"https://llm-center.modelbest.cn","web_token":"old"}"#])
         let store = LLMCenterAuthStore(files: files, configPath: configPath)
 
-        try store.save(webToken: "tok-new", appCode: nil, api: "https://llm-center.modelbest.co")
+        try store.save(LLMCenterTokenSet(webToken: "tok-new"), api: "https://llm-center.modelbest.co", source: .refresh)
 
         let saved = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(XCTUnwrap(files.files[configPath]).utf8)) as? [String: Any])
         XCTAssertEqual(saved["api"] as? String, "https://llm-center.modelbest.co")
@@ -103,7 +103,7 @@ final class LLMCenterAuthStoreTests: XCTestCase {
         let files = FakeFiles([configPath: "not-json"])
         let store = LLMCenterAuthStore(files: files, configPath: configPath)
 
-        try store.save(webToken: "tok-new", appCode: nil, api: "https://example.com")
+        try store.save(LLMCenterTokenSet(webToken: "tok-new"), api: "https://example.com", source: .refresh)
 
         let saved = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(XCTUnwrap(files.files[configPath]).utf8)) as? [String: Any])
         XCTAssertEqual(saved["web_token"] as? String, "tok-new")

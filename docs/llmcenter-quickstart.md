@@ -28,7 +28,7 @@ OpenUsage 是一个 macOS 菜单栏小工具，可以直接在菜单栏上看到
 
 OpenUsage 读取的是你自己电脑上的登录信息，DMG 里**不包含任何人的账号**。首次使用时，LLMCenter 卡片会直接出现（不需要事先登录过），上面有 **Sign In to LLMCenter** 按钮——点一下，浏览器里确认授权即可，**不需要装任何命令行工具**。
 
-授权成功后，登录信息写入本机的 `~/Library/Application Support/llmctl/config.json`，之后 token 过期也是同一个按钮，点一下就能续上。
+授权成功后，登录信息写入本机的 `~/Library/Application Support/llmctl/config.json`，token 本身只有约 1 小时有效期，但登录时会同时保存一个长期有效的 refresh token，OpenUsage 会在到期前自动换新，**平时不需要再点登录**。只有 refresh token 也失效时，才需要再点一次 **Sign In to LLMCenter**。
 
 > 这个路径和 `llmctl` CLI 共用。如果你本来就在用它，两边共享同一份登录；OpenUsage 写入时不会动文件里属于它的其他字段（access key、model、env）。
 
@@ -85,7 +85,7 @@ OpenUsage 读取的是你自己电脑上的登录信息，DMG 里**不包含任�
 |---|---|
 | **"OpenUsage 已损坏"** | 没执行安装第 2 步的 `xattr` 命令 |
 | **"Not signed in to LLMCenter"** | 点卡片上的 **Sign In to LLMCenter**，在浏览器里确认即可 |
-| **"LLMCenter login expired"** | 同上，点 **Sign In to LLMCenter** 重新授权 |
+| **"LLMCenter login expired"** | 自动续期也失败了，点 **Sign In to LLMCenter** 重新授权即可 |
 | **每个指标都报 HTTP 404 / 418** | 配置文件里的 `api` 地址已失效。已知的旧地址（`llm-center.modelbest.cn`、`…ali.modelbest.*`）App 会自动切到可用地址；若仍报错说明是个没见过的地址，手动改成可访问的即可，token 不用换 |
 | **连接错误 / 数字不更新** | 检查是否连着公司网络或 VPN |
 | **有额度但显示不出来** | 确认账号已归属部门且分配了月度额度 |

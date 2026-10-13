@@ -123,20 +123,45 @@ tokens:   promptTokens, completionTokens, totalTokens,
 
 ### 为什么必须由 app 自己做
 
+> 以下是 `llmctl` 0.1.0 的行为。0.2.14 的帮助文本写明 `auth login` 在「access / refresh 元数据不完整」时才走
+> 浏览器授权，`--force` 可强制重授权，并保存 `refresh_token`（见下文「Token 寿命与静默续期」）。0.2.14 对
+> 「元数据齐全但服务端已拒绝」的情形是否仍空转，**未重新实测**。
+
 `llmctl auth login` **只做本地非空检查**：只要 `config.json` 的 `web_token` 字段非空，它就在 ~2ms 内
 空转返回并原样回显旧 token，从不向服务端验证。实测把签名尾部改成 `AAAAAA` 的失效 token 也照样空转。
 所以 token 过期后 CLI 是死路，唯一出路是先清空该字段——或者由 app 自己走完授权。
 
-### 步骤
+### 步骤（OIDC + PKCE，2026-09-17 起）
 
-1. `POST {api}/llm/api/cli/auth/session`，body `{"state":"<48 位 hex>"}`（state 由客户端生成）
+> **协议已在 2026-09-17 前后变更。** 旧的两段式（只发 `state`，poll 直接返回 `webToken`）已被服务端
+> 拒绝：`auth/session` 返回 `{"code":400,"message":"当前服务仅支持 llmctl 0.2.12 及以上版本，请先升级
+> CLI"}`，浏览器永远不会打开。**这句文案描述的是协议版本（是否带 PKCE），不是本机是否装了 llmctl。**
+> 已实测：只要 body 带 `codeChallenge`，即使用 curl 的默认 User-Agent 也返回 `code:0`；不带则 400。
+
+1. 客户端生成 PKCE 对：`verifier` = 32 字节 CSPRNG 的 base64url（43 字符，RFC 7636 下限），
+   `challenge` = `BASE64URL(SHA256(ASCII(verifier)))`。
+
+   `state` 必须带 `llmctl_` 前缀（前缀 + 48 位 hex）。**这是独立于 PKCE 的第二道校验**：漏掉前缀时服务端
+   返回 `{"code":400,"message":"OIDC CLI state 必须以 llmctl_ 开头"}`，即使 `codeChallenge` 正确也一样被拒。
+
+   `POST {api}/llm/api/cli/auth/session`，body：
 
    ```jsonc
-   {"code":0,"data":{"state":"…","authorizeUrl":"https://llm-center.modelbest.co/cli-auth?state=…",
-                     "expiresIn":300,"pollIntervalMs":1000}}
+   {"state":"llmctl_<48 位 hex>","codeChallenge":"<43 字符 base64url>",
+    "oidcRedirectUri":"https://llm-center.modelbest.co/auth/callback"}
    ```
 
-   **`authorizeUrl` 的 host 与 api host 不同**，必须原样使用服务端返回值，不得自行拼接。
+   ```jsonc
+   {"code":0,"data":{"state":"…",
+     "authorizeUrl":"https://iam.modelbest.co/api/admin/oauth2/authorize?…&code_challenge=…&code_challenge_method=S256",
+     "expiresIn":300,"pollIntervalMs":1000,
+     "tokenEndpoint":"https://iam.modelbest.co/api/admin/oauth2/token",
+     "clientId":"997fee45c3212e4881db5bb01edc5a21",
+     "redirectUri":"https://llm-center.modelbest.co/auth/callback"}}
+   ```
+
+   **`authorizeUrl` 与 `tokenEndpoint` 都在 `iam.modelbest.co`，与 api host 不同**，必须原样使用服务端返回
+   值，不得自行拼接。`clientId` / `redirectUri` 同样以服务端返回为准。
 
 2. 浏览器打开 `authorizeUrl`，用户用已有 SSO 会话确认。
 
@@ -144,31 +169,59 @@ tokens:   promptTokens, completionTokens, totalTokens,
    （同一路径用 POST 返回 **HTTP 500**。）
 
    ```jsonc
-   {"code":0,"data":{"status":"pending","webToken":null,"appCode":null}}
+   {"code":0,"data":{"status":"pending","authorizationCode":null,"error":null,"errorDescription":null}}
    ```
 
-### 成功判据：`webToken` 非空，而不是 status
+4. 拿到 code 后**换 token**：`POST {tokenEndpoint}`，`application/x-www-form-urlencoded`：
 
-**完成态实测（2026-08-06 真人授权）**：`{"status":"completed","webToken":"…","appCode":null}`。字面值是
-`completed` —— 不是此前猜测的 `success`/`authorized`。这正说明按猜测的字符串匹配会把服务端真的发来的
-token 丢掉。OpenUsage 以「`webToken` 非空」为唯一成功判据，无视 status 字面值；非 pending 且无 token 的
-status 一律当失败。
+   ```
+   grant_type=authorization_code&code=<authorizationCode>
+     &code_verifier=<verifier>&client_id=<clientId>&redirect_uri=<redirectUri>
+   ```
 
-**`appCode` 实测为 `null`**：字段在响应里存在，但值为空，因此 OpenUsage 不写 `app_code` 键。下面那条
-配对风险因此在当前服务端行为下不成立（没有新 appCode 可错配），但字段既然存在，服务端将来发非空值时
-仍按「poll 返回则写」处理。
+   响应是**扁平 OAuth**（不再包 `data`），token 字段为 `web_token`（兼容 `access_token`），
+   另有 `expires_in` / `refresh_token`。
 
-**token 复用**：有效期内重复授权返回的是**同一个** token（两次实测尾部一致），不是每次新签。
+### 成功判据：`authorizationCode` 非空，而不是 status
+
+服务端不再直接下发 token —— poll 转发的是 OIDC 的 `authorizationCode`，需要第 4 步用 PKCE verifier
+换取。OpenUsage 以「`authorizationCode` 非空」为唯一成功判据，无视 status 字面值；非 pending 且无 code
+的 status 一律当失败。若服务端改发 OAuth 错误（`error` / `errorDescription`），同样视为终止失败。
 
 ### 写回 `config.json` 的约定
 
-OpenUsage 用读-改-写：只设 `web_token`，`api` 仅在缺失时补写，`app_code` 仅在 poll 返回时写；
+OpenUsage 用读-改-写：设 `web_token`，`api` 仅在缺失时补写，`app_code` 仅在换 token 返回时写；
 `access_key` / `model` / `env` 等 CLI 自有键**逐字保留**。写入走临时文件 + `fchmod 0600` + `rename`，
 保证原子性与权限。
 
-**未验证的配对风险**：若服务端把新 `webToken` 与新的 `appCode`/`sessionId` 绑定而 poll 未全部返回，
-`llmctl` 可能拿到错配组合（OpenUsage 自身只用 `web_token`，不受影响）。2026-08-06 的真实授权实测里
-`appCode` 为 `null`，且事后 `llmctl models list` exit 0，说明当前服务端行为下不成立。
+token 的**配套键必须和 `web_token` 一起写**（`llmctl` 0.2.x 读的是同一批键）：
+
+| 键 | 登录（授权码换 token） | 续期（refresh grant） |
+|---|---|---|
+| `refresh_token` | 写服务端返回值；**没返回就删掉旧的** | 返回了轮换值就替换，没返回就保留原值 |
+| `token_expires_at` | `now + expires_in`（无则取 JWT `exp`，都没有就删） | 同左 |
+| `oidc_token_endpoint` / `oidc_client_id` / `oidc_redirect_uri` | 写本次 session 返回的值 | 不动 |
+
+只换 `web_token` 而留着旧的 `refresh_token` / `token_expires_at` 会得到一个自相矛盾的文件：CLI 看到
+过期的 `token_expires_at` 就会拿旧 refresh token 去续期，再把刚写好的 `web_token` 覆盖掉。
+
+## Token 寿命与静默续期（2026-10-13）
+
+- `web_token` 是 IAM 签发的 JWT，`exp - iat = 3600`，**固定 1 小时**，客户端无法延长。授权 URL 的 scope 是
+  `openid profile email roles dept`，没有 `offline_access`，但 `llmctl` 0.2.14 的登录流程要求响应里必须有
+  `refresh_token`（缺了报 `OIDC token response missing refresh_token`），说明服务端照发。
+- 此前 OpenUsage 的 `exchangeAuthorizationCode` 只取 token、丢弃 `refresh_token` / `expires_in`，所以每小时必然
+  走一次浏览器授权（日志里 10:31、11:37、12:37、13:39 逐小时出现 `login expired` → `sign-in complete`）。
+- 现在改为：登录时保存 `refresh_token` 与 `oidc_*`；每次 `refresh()` 前若 token 剩余 ≤ 5 分钟（以 JWT `exp` 为准，
+  `token_expires_at` 仅作不透明 token 的兜底，因为别的程序换 token 时它会过期），向 `oidc_token_endpoint` 发
+  `grant_type=refresh_token&refresh_token=…&client_id=…`（form-urlencoded）；服务端 401 时也会被动续期一次并重试。
+- 失败分类：4xx → refresh token 已死（走原有「过期 → 登录」路径）；408/429/5xx/网络错误 → **不算过期**，
+  卡片显示连接错误，下次刷新再试（否则一次网络抖动就会弹浏览器）。
+- 与 `llmctl` 共用文件的竞态：refresh token 若被服务端轮换，两边同时续期会让一方的 refresh token 作废。
+  收到 4xx 后会先重读磁盘，如果 `web_token` / `refresh_token` 已被别的进程换新，就直接采用，不进入登录。
+- **待实测**：refresh grant 的真实响应（是否轮换 `refresh_token`、是否带 `expires_in`、refresh token 自身寿命）
+  尚未在真实服务端观察过；实现按 OAuth 标准并对「不轮换 / 无 `expires_in`」都做了兼容。
+
 
 **自动模式的首轮时序**：`hasCompletedFirstRefresh()` 读的是 `WidgetDataStore.lastRefreshAt`，它在
 `refreshAll` **整批结束后**才盖章，而自动触发发生在单个 provider 的 `refresh()` 内部——所以启动时，

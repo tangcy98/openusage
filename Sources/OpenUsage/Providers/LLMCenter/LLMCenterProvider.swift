@@ -13,15 +13,18 @@ final class LLMCenterProvider: ProviderRuntime {
 
     let authStore: LLMCenterAuthStore
     let usageClient: LLMCenterUsageClient
+    let tokenRefresher: LLMCenterTokenRefresher
     let now: @Sendable () -> Date
 
     init(
         authStore: LLMCenterAuthStore = LLMCenterAuthStore(),
         usageClient: LLMCenterUsageClient = LLMCenterUsageClient(),
+        authClient: LLMCenterAuthClient = LLMCenterAuthClient(),
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.authStore = authStore
         self.usageClient = usageClient
+        self.tokenRefresher = LLMCenterTokenRefresher(authStore: authStore, client: authClient, now: now)
         self.now = now
     }
 
@@ -58,8 +61,19 @@ final class LLMCenterProvider: ProviderRuntime {
         } catch {
             return ProviderSnapshot.error(provider: provider, error: error)
         }
-        guard let auth else {
+        guard var auth else {
             return ProviderSnapshot.error(provider: provider, error: LLMCenterAuthError.notLoggedIn)
+        }
+
+        // The access token only lives about an hour, so renew it from the refresh token before it lapses
+        // instead of sending the user back to the browser. A failed renewal isn't fatal yet — the current
+        // token may still have minutes left — so the outcome is remembered and judged only if the server
+        // actually rejects the token.
+        var renewal: LLMCenterRefreshResult?
+        if tokenRefresher.needsRenewal(auth) {
+            let result = await tokenRefresher.refresh(auth)
+            if case .refreshed(let renewed) = result { auth = renewed }
+            renewal = result
         }
 
         let calendar = Calendar.current
@@ -73,17 +87,21 @@ final class LLMCenterProvider: ProviderRuntime {
         // stays).
         let quota: LLMCenterQuota
         do {
-            let department = try await usageClient.fetchMyDepartment(api: auth.apiBaseURL, token: auth.webToken)
-            let members = try await usageClient.fetchDepartmentMembers(
-                api: auth.apiBaseURL, token: auth.webToken, deptId: department.deptId
-            )
-            guard let member = members.first(where: { $0["userId"] as? String == department.userId }),
-                  let monthlyQuota = ProviderParse.number(member["effectiveQuota"]), monthlyQuota > 0,
-                  let spent = ProviderParse.number(member["spentAmount"])
-            else {
-                return ProviderSnapshot.error(provider: provider, error: LLMCenterUsageError.invalidResponse)
+            do {
+                quota = try await fetchQuota(auth: auth)
+            } catch LLMCenterUsageError.invalidToken where renewal == nil && auth.refresh != nil {
+                // The server rejected a token we thought was fine (no readable expiry, clock skew, or
+                // revoked early): spend the refresh token once and retry.
+                let result = await tokenRefresher.refresh(auth)
+                renewal = result
+                guard case .refreshed(let renewed) = result else { throw LLMCenterUsageError.invalidToken }
+                auth = renewed
+                quota = try await fetchQuota(auth: auth)
             }
-            quota = LLMCenterQuota(monthlyQuota: monthlyQuota, spent: max(0, spent))
+        } catch LLMCenterUsageError.invalidToken where renewal == .unavailable {
+            // The token was rejected and renewing it failed for a reason that isn't the login's fault, so
+            // "sign in again" would be the wrong advice — and would pop a browser for a network blip.
+            return ProviderSnapshot.error(provider: provider, error: LLMCenterUsageError.connectionFailed)
         } catch {
             return ProviderSnapshot.error(provider: provider, error: Self.classify(error))
         }
@@ -140,6 +158,20 @@ final class LLMCenterProvider: ProviderRuntime {
             return ProviderSnapshot.error(provider: provider, error: LLMCenterUsageError.connectionFailed)
         }
         return ProviderSnapshot.make(provider: provider, plan: nil, lines: lines, refreshedAt: now)
+    }
+
+    private func fetchQuota(auth: LLMCenterAuth) async throws -> LLMCenterQuota {
+        let department = try await usageClient.fetchMyDepartment(api: auth.apiBaseURL, token: auth.webToken)
+        let members = try await usageClient.fetchDepartmentMembers(
+            api: auth.apiBaseURL, token: auth.webToken, deptId: department.deptId
+        )
+        guard let member = members.first(where: { $0["userId"] as? String == department.userId }),
+              let monthlyQuota = ProviderParse.number(member["effectiveQuota"]), monthlyQuota > 0,
+              let spent = ProviderParse.number(member["spentAmount"])
+        else {
+            throw LLMCenterUsageError.invalidResponse
+        }
+        return LLMCenterQuota(monthlyQuota: monthlyQuota, spent: max(0, spent))
     }
 
     private static func classify(_ error: Error) -> LLMCenterUsageError {

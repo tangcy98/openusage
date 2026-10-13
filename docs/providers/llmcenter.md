@@ -45,11 +45,26 @@ against. OpenUsage redirects the hosts it knows are gone (`llm-center.modelbest.
 `…ali.modelbest.*` pair) to the live `llm-center.modelbest.co`, and repairs the recorded value the next
 time it writes the file. A host it doesn't recognize is left exactly as written.
 
+## Staying signed in
+
+LLMCenter's access token only lasts about an hour. Signing in also saves a longer-lived **refresh
+token** next to it, and OpenUsage uses that to get a new access token a few minutes before the old one
+runs out — no browser, no click. In normal use you sign in once and the card keeps updating. The same
+renewal kicks in if LLMCenter turns a token down early.
+
+The browser comes back only when the refresh token itself is no longer accepted (it expired or was
+revoked). A momentary network or server problem while renewing is *not* treated as an expired login: the
+card shows a connection error instead and tries again on the next refresh.
+
+If you also use `llmctl`, the two share the login. When `llmctl` renews it first, OpenUsage notices the
+newer token in the file and uses it. A login saved by an older `llmctl` or an older OpenUsage build has no
+refresh token, so it behaves as before until you sign in once more.
+
 ## Signing in from the app
 
 The **Sign In to LLMCenter** button appears on the card whenever there's no usable login — the first
-time you use the provider, and again if the saved token expires. Click it, confirm in the browser, and
-the card reloads on its own.
+time you use the provider, and again if the saved login can no longer be renewed. Click it, confirm in
+the browser, and the card reloads on its own.
 
 The card is on from the first launch even though you haven't signed in yet — that's deliberate, since
 the button is how you sign in. Turn the provider off in Customize and it stays off. See
@@ -80,6 +95,8 @@ refresh counts are never sent, whatever that setting says. See [Privacy](../priv
   cost/tokens for Today and Yesterday.
 - `POST {api}/llm/api/usage/user-model-details` — the per-model cost rows behind the hover breakdown
   on Today, This Month, and Yesterday, and the month-to-date Usage Trend chart.
+- `POST {oidc_token_endpoint}` with `grant_type=refresh_token` — the silent renewal described above.
+  The endpoint and client id are saved in `config.json` at sign-in (`oidc_*`), the same keys `llmctl` uses.
 - `POST {api}/llm/api/cli/auth/session` and `GET {api}/llm/api/cli/auth/poll?state=…` — the browser
   authorization the Sign In button drives. Neither needs an existing credential, which is what lets it
   serve as both the first sign-in and the recovery path. See
@@ -88,8 +105,10 @@ refresh counts are never sent, whatever that setting says. See [Privacy](../priv
 ## Troubleshooting
 
 - **"Not signed in to LLMCenter"** — click **Sign In to LLMCenter** on the card.
-- **"LLMCenter login expired"** — the saved token was rejected (401/403). Click **Sign In to LLM
-  Center** on the card.
+- **"LLMCenter login expired"** — the saved token was rejected (401/403) and couldn't be renewed
+  from the refresh token. Click **Sign In to LLM Center** on the card; you shouldn't see this hourly.
+  If you do, the sign-in response carried no refresh token — check the log for
+  `sign-in response carried no refresh token`.
 - **HTTP 404 or 418 on every metric** — the API host in `config.json` is no longer serving. OpenUsage
   already redirects the hosts it knows are retired (`llm-center.modelbest.cn`, the `…ali.modelbest.*`
   pair) to the live one, so this only appears for a host it has never seen. Point `api` at a reachable

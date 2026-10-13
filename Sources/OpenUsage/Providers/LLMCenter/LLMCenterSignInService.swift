@@ -169,15 +169,18 @@ final class LLMCenterSignInService {
         phase = .idle
     }
 
-    /// 48 hex characters from the system CSPRNG. A sign-in nonce must be unguessable, and a
-    /// `SecRandomCopyBytes` failure is surfaced as an error rather than falling back to a weaker source.
+    /// The `llmctl_` prefix the server requires on an OIDC CLI `state`, then 48 hex characters from the
+    /// system CSPRNG. A sign-in nonce must be unguessable, and a `SecRandomCopyBytes` failure is surfaced
+    /// as an error rather than falling back to a weaker source.
+    nonisolated static let statePrefix = "llmctl_"
+
     nonisolated static func makeState() throws -> String {
         var bytes = [UInt8](repeating: 0, count: 24)
         guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
             AppLog.error(LogTag.auth("llmcenter"), "SecRandomCopyBytes failed; cannot generate a sign-in state")
             throw LLMCenterSignInError.stateUnavailable
         }
-        return bytes.map { String(format: "%02x", $0) }.joined()
+        return statePrefix + bytes.map { String(format: "%02x", $0) }.joined()
     }
 
     private func run() async {
@@ -185,7 +188,10 @@ final class LLMCenterSignInService {
         do {
             let api = try await loadOffMainActor { [authStore] in try authStore.loadAPIBaseURL() }
             let state = try makeState()
-            let session = try await client.createSession(api: api, state: state)
+            let pkce = try LLMCenterPKCE.generate()
+            let session = try await client.createSession(
+                api: api, state: state, pkce: pkce, redirectUri: Self.redirectURI(api: api)
+            )
             guard !Task.isCancelled else { return }
 
             phase = .awaitingBrowser
@@ -195,11 +201,22 @@ final class LLMCenterSignInService {
             )
             openURL(session.authorizeURL)
 
-            let token = try await awaitAuthorization(api: api, session: session)
+            let code = try await awaitAuthorization(api: api, session: session)
             guard !Task.isCancelled else { return }
 
-            try await loadOffMainActor { [authStore] in
-                try authStore.save(webToken: token.webToken, appCode: token.appCode, api: api)
+            let token = try await client.exchangeAuthorizationCode(session: session, code: code)
+            guard !Task.isCancelled else { return }
+
+            let oidc = LLMCenterOIDCMetadata(
+                tokenEndpoint: session.tokenEndpoint, clientId: session.clientId, redirectUri: session.redirectUri
+            )
+            try await loadOffMainActor { [authStore, now] in
+                try authStore.save(token, api: api, source: .signIn(oidc), now: now())
+            }
+            // No refresh token means the login lapses after the access token's lifetime and the next
+            // expiry needs the browser again; log it so a server-side change doesn't pass unnoticed.
+            if token.refreshToken == nil {
+                AppLog.warn(LogTag.auth("llmcenter"), "sign-in response carried no refresh token; this login can't be renewed silently")
             }
             AppLog.info(LogTag.auth("llmcenter"), "sign-in complete; saved a new token to the config file")
 
@@ -209,18 +226,37 @@ final class LLMCenterSignInService {
         } catch is CancellationError {
             // `cancel()` already reset the phase.
         } catch {
-            AppLog.error(LogTag.auth("llmcenter"), "sign-in failed: \(error.localizedDescription)")
+            // The detail is the only diagnostic trace of a `sessionFailed`: every case shares one
+            // friendly sentence, and the UI copy is fixed, so the log is where it has to land.
+            let detail = (error as? LLMCenterSignInError)?.diagnosticDetail
+            AppLog.error(
+                LogTag.auth("llmcenter"),
+                "sign-in failed: \(error.localizedDescription)\(detail.map { " (detail: \($0))" } ?? "")"
+            )
             autoSignInBlocked = true
             phase = .failed(error.localizedDescription)
         }
     }
 
-    /// Polls until the server hands back a token, the user is refused, or the session expires. Transient
-    /// transport failures are retried a bounded number of times — the poll is a safe GET, and a single
-    /// dropped request should not discard an authorization the user already completed in the browser.
+    /// The OIDC redirect the authorization page sends the user back to once they approve. It must be the
+    /// same value at session creation and token exchange, so it is derived once from the API base and
+    /// passed to both.
+    nonisolated static func redirectURI(api: String) -> String? {
+        guard var components = URLComponents(string: api.trimmingCharacters(in: .whitespacesAndNewlines)),
+              let host = components.host, !host.isEmpty
+        else { return nil }
+        components.path = "/auth/callback"
+        components.query = nil
+        components.fragment = nil
+        return components.string
+    }
+
+    /// Polls until the server hands back an authorization code, the user is refused, or the session
+    /// expires. Transient transport failures are retried a bounded number of times — the poll is a safe
+    /// GET, and a single dropped request should not discard an authorization the user already completed.
     private func awaitAuthorization(
         api: String, session: LLMCenterAuthSession
-    ) async throws -> (webToken: String, appCode: String?) {
+    ) async throws -> String {
         let deadline = now().addingTimeInterval(min(session.expiresIn, 600))
         var transportFailures = 0
         while true {
@@ -245,8 +281,8 @@ final class LLMCenterSignInService {
             switch result {
             case .pending:
                 continue
-            case .authorized(let webToken, let appCode):
-                return (webToken, appCode)
+            case .authorized(let code):
+                return code
             case .rejected(let code):
                 throw LLMCenterSignInError.pollFailed(code: code)
             }
